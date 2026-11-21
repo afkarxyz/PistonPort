@@ -2,7 +2,7 @@
 
 PistonPort is an unofficial Windows x64 port of *Cars 3: Driven to Win* built on SpartanPort. It prepares the native game image on your PC from your own PS4 copy. The supported game release is **CUSA07027, v01.00**.
 
-![PistonPort's Rune launcher showing the Garage and Play button](docs/images/pistonport/PistonPort-Launcher.png)
+![PistonPort's Garage with the Cars 3 artwork, Saves tab and Play button](docs/images/pistonport/PistonPort-Launcher.png)
 
 ## Play on Windows
 
