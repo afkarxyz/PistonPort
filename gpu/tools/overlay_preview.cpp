@@ -8,7 +8,8 @@
 // SCENE: menu (SPARTAN_PREVIEW_TAB 0-3), trophies, notifications (the trophy window's pages, with
 // SPARTAN_PREVIEW_ORDER 0-2, SPARTAN_PREVIEW_FILTER 0-2 and SPARTAN_PREVIEW_GRADE 0-4), saves (the
 // game's save list, SPARTAN_PREVIEW_SAVE=1 to save), overwrite (its question), health (the enemy
-// health bar, after a hit down to SPARTAN_PREVIEW_HEALTH percent; with frames, three hits), or toast.
+// health bar, after a hit down to SPARTAN_PREVIEW_HEALTH percent; with frames, three hits),
+// toast, or keyboard-hints (the keyboard guide and FPS counter).
 // SPARTAN_PREVIEW_TOAST=1..4 (bronze..platinum, or several: "1234") adds notifications, over any
 // scene, in SPARTAN_PREVIEW_THEME (original, card, card_cinematic, corner), drawn
 // SPARTAN_PREVIEW_TOAST_MS after they start; with SPARTAN_PREVIEW_FRAMES=N and SPARTAN_PREVIEW_STEP_MS,
@@ -284,7 +285,7 @@ void DemoHealth(double ms, bool frames) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "overlay-preview OUT.bmp menu|trophies|notifications|saves|overwrite|health|toast [WIDTH HEIGHT]\n");
+        std::fprintf(stderr, "overlay-preview OUT.bmp menu|trophies|notifications|saves|overwrite|health|toast|keyboard-hints [WIDTH HEIGHT]\n");
         return 2;
     }
     const std::string out = argv[1], scene = argv[2];
@@ -337,6 +338,18 @@ int main(int argc, char** argv) {
     } else if (scene == "saves" || scene == "overwrite") {
         const char* language = std::getenv("SPARTAN_PREVIEW_LANG");
         DemoSaves(scene, language && std::string(language) == "pt");
+    } else if (scene == "keyboard-hints") {
+        auto& settings = SpartanSettings::Get();
+        settings.show_fps = true;
+        settings.show_keyboard_hints = true;
+        constexpr SpartanGpuKeyboardBinding bindings[] = {
+            {"move_left", "A"}, {"move_right", "D"}, {"r2", "F"}, {"l2", "R"}, {"square", "E"},
+            {"cross", "Space"}, {"circle", "Left Shift"}, {"options", "Enter"}, {"triangle", "Q"},
+            {"l1", "1"}, {"r1", "3"}, {"l3", "Z"}, {"r3", "C"},
+            {"up", "I"}, {"down", "K"}, {"left", "J"}, {"right", "L"},
+        };
+        SetKeyboardHints(bindings);
+        frame_ms_avg = 1000.0f / 60.0f;
     } else if (scene == "health") {
         SpartanSettings::Get().enemy_health_bar = true;
     } else if (scene == "loading") {

@@ -2,8 +2,10 @@
 #include "spartanport_overlay.h"
 #include "spartanport_ui_font.h"
 #include "spartanport_loading_text.h"
+#include "pistonport_hint_icons.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cfloat>
 #include <chrono>
@@ -1065,6 +1067,41 @@ int MenuTabs(const char* const* tabs, int count, int open) {
     return clicked;
 }
 
+void PistonPortMenu() {
+    auto& settings = SpartanSettings::Get();
+    const auto* view = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(view->GetCenter(), ImGuiCond_Appearing, ImVec2(.5f, .5f));
+    ImGui::SetNextWindowSize(ImVec2(460.f * base_scale, 0));
+    bool open = true;
+    if (ImGui::Begin("PistonPort", &open, ImGuiWindowFlags_AlwaysAutoResize |
+                                         ImGuiWindowFlags_NoCollapse)) {
+        ImGui::TextUnformatted("Cars 3: Driven to Win");
+        ImGui::Separator();
+        bool fps = settings.show_fps.load();
+        if (ImGui::Checkbox("Show FPS", &fps)) {
+            settings.show_fps = fps;
+            dirty = true;
+        }
+        bool hints = settings.show_keyboard_hints.load();
+        if (ImGui::Checkbox("Show Keyboard Hints", &hints)) {
+            settings.show_keyboard_hints = hints;
+            dirty = true;
+        }
+        int volume = settings.master_volume.load();
+        if (ImGui::SliderInt("Volume", &volume, SpartanSettings::MasterVolumeMin,
+                             SpartanSettings::MasterVolumeMax, "%d%%")) {
+            settings.master_volume = volume;
+            dirty = true;
+        }
+        ImGui::Spacing();
+        ImGui::TextUnformatted("F  Accelerate      A / D  Steer      E  Boost");
+        ImGui::Spacing();
+        if (ImGui::Button("Return to race")) open = false;
+    }
+    ImGui::End();
+    if (!open) SetOpen(false);
+}
+
 void Menu() {
     auto& s = SpartanSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -1673,12 +1710,8 @@ void LoadingScreen() {
     Label(dl, body, 18.0f * k, ImVec2(R, sy), muted, LoadingTr("Esc or Circle: start playing now"), 1.0f);
 }
 
-void FpsCounter() {
+void FpsCounter(const char* text, float width) {
     const auto& s = SpartanSettings::Get();
-    const std::string text = OverlayText();
-    if (text.empty()) {
-        return;
-    }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float pad = 12.0f * base_scale;
     const int corner = s.overlay_corner;
@@ -1687,12 +1720,15 @@ void FpsCounter() {
                                    bottom ? viewport->WorkPos.y + viewport->WorkSize.y - pad : viewport->WorkPos.y + pad),
                             ImGuiCond_Always, ImVec2(right ? 1.0f : 0.0f, bottom ? 1.0f : 0.0f));
     ImGui::SetNextWindowBgAlpha(s.overlay_opacity / 100.0f);
+    if (width > 0.0f) {
+        ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
+    }
     ImGui::Begin("##fps", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::SetWindowFontScale(s.overlay_scale / 100.0f);
-    UiText(text.c_str());
+    UiText(text);
     ImGui::End();
 }
 
@@ -1768,6 +1804,7 @@ ImTextureRef TrophyIcon(int id) {
 
 // The launcher's trophy texts in a language (<user>/trophy_texts/<code>.txt); empty when missing.
 SpartanTrophyTexts::Texts ReadTrophyTexts(std::string_view code) {
+    if (std::getenv("PISTONPORT_TROPHY_METADATA")) return {};
     const char* dir = std::getenv("SPARTAN_USER_DIR");
     const std::string path = std::string(dir && dir[0] ? dir : "user") + "/trophy_texts/" + std::string(code) + ".txt";
     std::ifstream file(path, std::ios::binary);
@@ -1886,18 +1923,157 @@ void PushNotice(std::string title, std::string detail, SpartanPng::Image image, 
     toast_active = true;
 }
 
-// The notices' top edge: below the FPS counter when it is showing in the top-right half of the screen.
-float NoticeTop(float pad, float gap) {
+float TopRightBelow(float pad, float gap, std::initializer_list<const char*> above) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     float y = viewport->WorkPos.y + pad;
-    if (ImGuiWindow* fps = ImGui::FindWindowByName("##fps"); fps && fps->Active) {
-        const float mid_x = viewport->WorkPos.x + viewport->WorkSize.x * 0.5f;
-        const float mid_y = viewport->WorkPos.y + viewport->WorkSize.y * 0.5f;
-        if (fps->Pos.y < mid_y && fps->Pos.x + fps->Size.x > mid_x) {
-            y = std::max(y, fps->Pos.y + fps->Size.y + gap);
+    const float mid_x = viewport->WorkPos.x + viewport->WorkSize.x * 0.5f;
+    const float mid_y = viewport->WorkPos.y + viewport->WorkSize.y * 0.5f;
+    for (const char* name : above) {
+        const auto* window = ImGui::FindWindowByName(name);
+        if (window && window->Active && window->Pos.y < mid_y && window->Pos.x + window->Size.x > mid_x) {
+            y = std::max(y, window->Pos.y + window->Size.y + gap);
         }
     }
     return y;
+}
+
+float NoticeTop(float pad, float gap) {
+    return TopRightBelow(pad, gap, {"##fps", "##keyboard_hints"});
+}
+
+struct KeyboardHint {
+    const char* button;
+    std::span<const unsigned char> png;
+    std::string keys{};
+    const char* alternate = nullptr;
+    ImTextureData texture;
+};
+namespace PadIcons = PistonPortPadIcons;
+KeyboardHint keyboard_hints[] = {
+    {"move_left", PadIcons::leftstick, {}, "move_right"},
+    {"r2", PadIcons::playstation_trigger_r2},
+    {"l2", PadIcons::playstation_trigger_l2},
+    {"square", PadIcons::playstation_button_color_square},
+    {"cross", PadIcons::playstation_button_color_cross},
+    {"circle", PadIcons::playstation_button_color_circle},
+    {"options", PadIcons::playstation4_button_options},
+    {"triangle", PadIcons::playstation_button_color_triangle},
+    {"l1", PadIcons::playstation_trigger_l1},
+    {"r1", PadIcons::playstation_trigger_r1},
+    {"l3", PadIcons::playstation_button_l3},
+    {"r3", PadIcons::playstation_button_r3},
+    {"up", PadIcons::playstation_dpad_up},
+    {"down", PadIcons::playstation_dpad_down},
+    {"left", PadIcons::playstation_dpad_left},
+    {"right", PadIcons::playstation_dpad_right},
+};
+constexpr float kKeyboardHintIconWidth = 1.8f;
+constexpr float kKeyboardHintIconHeight = 1.18f;
+
+void LoadKeyboardHintTextures() {
+    static bool loaded = false;
+    if (loaded) {
+        return;
+    }
+    loaded = true;
+    for (auto& hint : keyboard_hints) {
+        SpartanPng::Image icon;
+        if (!SpartanPng::DecodeRgba(hint.png.data(), hint.png.size(), icon)) {
+            continue;
+        }
+        hint.texture.Create(ImTextureFormat_RGBA32, icon.width, icon.height);
+        std::memcpy(hint.texture.GetPixels(), icon.rgba.data(), icon.rgba.size());
+        ImGui::RegisterUserTexture(&hint.texture);
+    }
+}
+
+void DrawHintIcon(ImTextureData& texture, ImVec2 pos, float width, float height) {
+    if (texture.Width == 0 || texture.Height == 0) {
+        return;
+    }
+    const float side = height * kKeyboardHintIconHeight;
+    const float scale = side / std::max(texture.Width, texture.Height);
+    const float w = texture.Width * scale, h = texture.Height * scale;
+    const ImVec2 top_left(pos.x + (width - w) * 0.5f, pos.y + (height - h) * 0.5f);
+    ImGui::GetWindowDrawList()->AddImage(texture.GetTexRef(), top_left,
+                                       ImVec2(top_left.x + w, top_left.y + h));
+}
+
+void SetKeyboardHints(std::span<const SpartanGpuKeyboardBinding> bindings) {
+    std::scoped_lock lock{imgui_mutex};
+    for (auto& hint : keyboard_hints) {
+        hint.keys.clear();
+        for (const char* button : {hint.button, hint.alternate}) {
+            if (!button) continue;
+            for (const auto& binding : bindings) {
+                if (std::strcmp(button, binding.button) != 0) continue;
+                if (!hint.keys.empty()) hint.keys += " / ";
+                hint.keys += binding.key;
+            }
+        }
+    }
+}
+
+using VisibleKeyboardHints = std::span<KeyboardHint* const>;
+
+float StackedOverlayWidth(const char* fps_text, float scale, VisibleKeyboardHints hints) {
+    const auto& style = ImGui::GetStyle();
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize() * scale;
+    const auto measure = [font, size](const char* text) {
+        return std::ceil(font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x);
+    };
+    const size_t rows = (hints.size() + 1) / 2;
+    std::array<float, 2> key_width{};
+    for (size_t i = 0; i < hints.size(); ++i) {
+        auto& column = key_width[i / rows];
+        column = std::max(column, measure(hints[i]->keys.c_str()));
+    }
+    const float pair_width = std::ceil(size * kKeyboardHintIconWidth) + 4.0f * style.CellPadding.x;
+    const float table_width = pair_width * (hints.size() > 1 ? 2.0f : 1.0f) + key_width[0] + key_width[1];
+    const float content_width = std::max(measure(Tr(fps_text)), table_width);
+    return std::ceil(content_width + 2.0f * style.WindowPadding.x);
+}
+
+void KeyboardHints(float width, VisibleKeyboardHints hints) {
+    LoadKeyboardHintTextures();
+    const auto* viewport = ImGui::GetMainViewport();
+    const auto& settings = SpartanSettings::Get();
+    const float pad = 12.0f * base_scale;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - pad,
+                                   TopRightBelow(pad, 6.0f * base_scale, {"##fps"})),
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(std::max(0.68f, settings.overlay_opacity / 100.0f));
+    if (width > 0.0f) {
+        ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
+    }
+    ImGui::Begin("##keyboard_hints", nullptr, ImGuiWindowFlags_NoDecoration |
+                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                 ImGuiWindowFlags_NoSavedSettings);
+    ImGui::SetWindowFontScale(settings.overlay_scale / 100.0f);
+    const bool two_groups = hints.size() > 1;
+    if (ImGui::BeginTable("##hint_bindings", two_groups ? 4 : 2, ImGuiTableFlags_SizingFixedFit)) {
+        const float height = ImGui::GetFontSize();
+        const float icon_width = std::ceil(height * kKeyboardHintIconWidth);
+        const auto draw_hint = [height, icon_width](KeyboardHint& hint, int column) {
+            ImGui::TableSetColumnIndex(column);
+            DrawHintIcon(hint.texture, ImGui::GetCursorScreenPos(), icon_width, height);
+            ImGui::Dummy(ImVec2(icon_width, height));
+            ImGui::TableSetColumnIndex(column + 1);
+            ImGui::TextColored(Ink::Silver, "%s", hint.keys.c_str());
+        };
+        const size_t rows = (hints.size() + 1) / 2;
+        for (size_t i = 0; i < rows; ++i) {
+            ImGui::TableNextRow();
+            draw_hint(*hints[i], 0);
+            if (i + rows < hints.size()) {
+                draw_hint(*hints[i + rows], 2);
+            }
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
 }
 
 // The trophy window's second page, the notifications: theme, sound and timing (saved in
@@ -3316,7 +3492,8 @@ bool Visible() {
     const auto& s = SpartanSettings::Get();
     return initialized && (loading || background_total || PrefetchActive() || CompileNoteActive() ||
                            menu_open || text_entry_active || choice_active || choice_retiring ||
-                           toast_active || SpartanToast::Busy() || trophy_view || s.show_fps || NoticeActive() ||
+                           toast_active || SpartanToast::Busy() || trophy_view || s.show_fps ||
+                           s.show_keyboard_hints || NoticeActive() ||
                            (s.actor_watch_supported && s.enemy_health_bar));
 }
 
@@ -3385,10 +3562,27 @@ void DrawWindows() {
         LoadingScreen();
     }
     if (menu_open) {
-        Menu();
+        PistonPortMenu();
     }
-    if (SpartanSettings::Get().show_fps && !menu_open) {
-        FpsCounter();
+    const auto& settings = SpartanSettings::Get();
+    std::array<KeyboardHint*, std::size(keyboard_hints)> visible{};
+    size_t hint_count = 0;
+    if (settings.show_keyboard_hints && !loading && !CapturesInput()) {
+        for (auto& hint : keyboard_hints) {
+            if (!hint.keys.empty()) {
+                visible[hint_count++] = &hint;
+            }
+        }
+    }
+    const VisibleKeyboardHints hints(visible.data(), hint_count);
+    const std::string fps_text = settings.show_fps && !menu_open ? OverlayText() : std::string{};
+    const float stacked_width = !hints.empty() && !fps_text.empty() && settings.overlay_corner == 1
+        ? StackedOverlayWidth(fps_text.c_str(), settings.overlay_scale / 100.0f, hints) : 0.0f;
+    if (!fps_text.empty()) {
+        FpsCounter(fps_text.c_str(), stacked_width);
+    }
+    if (!hints.empty()) {
+        KeyboardHints(stacked_width, hints);
     }
     float corner = ImGui::GetMainViewport()->WorkPos.y + ImGui::GetMainViewport()->WorkSize.y -
                    12.0f * base_scale;
@@ -3480,6 +3674,10 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
 } // namespace SpartanOverlay
 
 #ifndef SPARTAN_OVERLAY_PREVIEW // the preview links the library's
+extern "C" void spartanportgpu_keyboard_hints(const SpartanGpuKeyboardBinding* bindings, unsigned count) {
+    SpartanOverlay::SetKeyboardHints({bindings, count});
+}
+
 // Called by the runtime (src/runtime_services.c) when the game unlocks a trophy. id: the trophy's
 // (-1: a plain notice), title: its name, detail: its description (may be empty), png: the trophy's
 // icon (the PNG bytes from trophy00.trp) or null for the drawn medal. The theme chosen in the menu
@@ -3527,13 +3725,13 @@ extern "C" void spartanportgpu_trophy_setup(const SpartanGpuTrophyLabels* labels
         return;
     }
     struct Item {
-        int id;
+        int id, grade;
         std::string name, detail;
         std::vector<unsigned char> png;
     };
     std::vector<Item> list;
     for (int i = 0; i < count; i++) {
-        list.push_back({items[i].id, items[i].name ? items[i].name : "", items[i].detail ? items[i].detail : "",
+        list.push_back({items[i].id, items[i].grade, items[i].name ? items[i].name : "", items[i].detail ? items[i].detail : "",
                         items[i].png && items[i].png_size
                             ? std::vector<unsigned char>(items[i].png, items[i].png + items[i].png_size)
                             : std::vector<unsigned char>()});
@@ -3578,7 +3776,9 @@ extern "C" void spartanportgpu_trophy_setup(const SpartanGpuTrophyLabels* labels
             if (!item.png.empty()) {
                 SpartanPng::DecodeRgba(item.png.data(), item.png.size(), row.image); // empty on failure
             }
-            row.grade = SpartanToast::GradeFromIcon(row.image.rgba.data(), row.image.width, row.image.height);
+            row.grade = item.grade == SPARTAN_TROPHY_GRADE_FROM_ICON
+                ? SpartanToast::GradeFromIcon(row.image.rgba.data(), row.image.width, row.image.height)
+                : static_cast<SpartanToast::Grade>(item.grade);
             if (row.id >= 0 && row.id < 128) {
                 if (int(entries.size()) <= row.id) {
                     entries.resize(size_t(row.id) + 1);

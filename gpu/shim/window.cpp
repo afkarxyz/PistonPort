@@ -3,6 +3,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -113,13 +119,14 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     ASSERT_MSG(window, "Failed to create window: {}", SDL_GetError());
-    // spartanport: the game's own icon (run.py converts sce_sys/icon0.png to BMP, SDL's built-in format).
+#ifndef _WIN32
     if (const char* icon_path = std::getenv("SPARTAN_WINDOW_ICON")) {
         if (SDL_Surface* icon = SDL_LoadBMP(icon_path)) {
             SDL_SetWindowIcon(window, icon);
             SDL_DestroySurface(icon);
         }
     }
+#endif
 
     const char* driver = SDL_GetCurrentVideoDriver();
     const SDL_PropertiesID wp = SDL_GetWindowProperties(window);
@@ -127,6 +134,15 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     if (driver && !std::strcmp(driver, "windows")) {
         window_info.type = WindowSystemType::Windows;
         window_info.render_surface = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+        // Load the game's embedded icon at the sizes Windows uses for this display.
+        auto hwnd = static_cast<HWND>(window_info.render_surface);
+        const UINT dpi = GetDpiForWindow(hwnd);
+        for (int kind : {ICON_SMALL, ICON_BIG}) {
+            auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON,
+                GetSystemMetricsForDpi(kind == ICON_SMALL ? SM_CXSMICON : SM_CXICON, dpi),
+                GetSystemMetricsForDpi(kind == ICON_SMALL ? SM_CYSMICON : SM_CYICON, dpi), LR_SHARED);
+            if (icon) SendMessageW(hwnd, WM_SETICON, kind, reinterpret_cast<LPARAM>(icon));
+        }
     } else
 #endif
     if (driver && !std::strcmp(driver, "x11")) {

@@ -646,7 +646,13 @@ static const char *const trophy_label_keys[TROPHY_LABELS]={"heading","notice","u
 static char trophy_label[TROPHY_LABELS][200];
 static char trophy_names[TROPHY_MAX][64];
 static char trophy_details[TROPHY_MAX][160];
+static int trophy_grades[TROPHY_MAX];
 static FILE *trophy_open_text(char *path,size_t size) {
+    const char *metadata=getenv("PISTONPORT_TROPHY_METADATA");
+    if (metadata && *metadata) {
+        snprintf(path,size,"%s",metadata);
+        return fopen(metadata,"rb");
+    }
     const char *dir=trophy_dir();
     static const char *const files[2]={"trophy_texts.txt","trophy_names.txt"};
     for (int i=0;i<2;i++) {
@@ -674,6 +680,19 @@ static void trophy_load_names(void) {
         while (*value==' ') value++;
         if (*p=='@') {
             *eq=0;
+            if (!strncmp(p,"@grade.",7)) {
+                char *end;
+                long id=strtol(p+7,&end,10);
+                if (*end==0 && end!=p+7 && id>=0 && id<TROPHY_MAX && strlen(value)==1) {
+                    switch (value[0]) {
+                        case 'B': trophy_grades[id]=SPARTAN_TROPHY_GRADE_BRONZE; break;
+                        case 'S': trophy_grades[id]=SPARTAN_TROPHY_GRADE_SILVER; break;
+                        case 'G': trophy_grades[id]=SPARTAN_TROPHY_GRADE_GOLD; break;
+                        case 'P': trophy_grades[id]=SPARTAN_TROPHY_GRADE_PLATINUM; break;
+                    }
+                }
+                continue;
+            }
             for (int k=0;k<TROPHY_LABELS;k++) if (!strcmp(p+1,trophy_label_keys[k])) snprintf(trophy_label[k],sizeof(trophy_label[k]),"%s",value);
             continue;
         }
@@ -748,6 +767,8 @@ static void trophy_load_once(void) {
         const unsigned char *png=0; uint64_t png_size=0;
         if (!trophy_icon(id,&png,&png_size)) { png=0; png_size=0; }
         infos[i].id=id; infos[i].name=trophy_names[id]; infos[i].detail=trophy_details[id];
+        infos[i].grade=(trophy_grades[id] || getenv("PISTONPORT_TROPHY_METADATA"))
+            ? trophy_grades[id] : SPARTAN_TROPHY_GRADE_FROM_ICON;
         infos[i].png=png; infos[i].png_size=png_size;
     }
     /* SpartanGpuTrophyLabels: one pointer per key, in the order of trophy_label_keys (0: English). */

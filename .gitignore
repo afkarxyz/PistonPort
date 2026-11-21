@@ -40,6 +40,7 @@ gamecontrollerdb.txt
 /mods_presets.json
 /patches.json
 /game_icon.ico
+/launcher/piston-game.ico
 /legacy-migrated
 /shortcut-migrated
 /mods/
@@ -52,3 +53,14 @@ launcher-rust/target/
 .superpowers/
 # Local agent plans and specs (superpowers skills), not shared for now
 /docs/superpowers/
+
+# PistonPort launcher source artwork and local build inputs.
+!pistonport/launcher/*.png
+!docs/images/pistonport/*.png
+/PistonPort.Runtime/
+/PistonPort.exe
+/native-profile/
+/CUSA07027/
+*.pkg
+*.iso
+cars3-native.bin

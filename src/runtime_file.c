@@ -48,7 +48,9 @@ typedef struct {
 _Static_assert(sizeof(GuestStat)==120,"FreeBSD stat layout");
 
 typedef struct { char *names; size_t count, *offsets; unsigned char *types; } Listing;
-typedef struct { int used, host; Listing *dir; size_t position; char path[512]; } File;
+#include "piston_pkg_bridge.h"
+typedef struct { int used, host; Listing *dir; size_t position; char path[512];
+                 int packaged, node; PkgInfo info; } File;
 typedef struct { char guest[64]; char host[512]; } Mount;
 static File files[MAX_FILES];
 static Mount mounts[MAX_MOUNTS];
@@ -80,6 +82,7 @@ static char user_root[512]="user";
 const char *runtime_file_user_dir(void) { return user_root; }
 void runtime_file_configure(const char *app0,const char *user) {
     char path[600];
+    configure_pkg();
     snprintf(user_root,sizeof(user_root),"%s",user);
     runtime_file_mount("/app0",app0);
     runtime_file_mount("/hostapp",app0);
@@ -93,11 +96,11 @@ void runtime_file_configure(const char *app0,const char *user) {
     }
 }
 /* Resolve a guest path to a host path; returns 0 or a host errno. */
-static int translate(const char *guest,char *out,size_t size) {
+static int locate(const char *guest,char *out,size_t size,int *packaged) {
     if (!guest || !*guest) return ENOENT;
     char buffer[1024];
-    if (guest[0]!='/') snprintf(buffer,sizeof(buffer),"/app0/%s",guest);
-    else snprintf(buffer,sizeof(buffer),"%s",guest);
+    int required=snprintf(buffer,sizeof(buffer),guest[0]=='/' ? "%s" : "/app0/%s",guest);
+    if (required<0 || (size_t)required>=sizeof(buffer)) return ENAMETOOLONG;
     for (const char *p=buffer;(p=strstr(p,".."));p+=2)
         if ((p==buffer || p[-1]=='/') && (p[2]==0 || p[2]=='/')) return EACCES;
     pthread_mutex_lock(&lock);
@@ -107,12 +110,18 @@ static int translate(const char *guest,char *out,size_t size) {
         if (!strncmp(buffer,mounts[i].guest,n) && (buffer[n]=='/' || !buffer[n]) && n>best) { best=n; m=&mounts[i]; }
     }
     int result=0;
+    if (packaged) *packaged=0;
     if (!m) result=ENOENT;
+    else if (pkg_archive && packaged && (!strcmp(m->guest,"/app0") || !strcmp(m->guest,"/hostapp"))) {
+        *packaged=1;
+        if ((size_t)snprintf(out,size,"%s",buffer+best)>=size) result=ENAMETOOLONG;
+    }
     else if ((size_t)snprintf(out,size,"%s%s",m->host,buffer+best)>=size) result=ENAMETOOLONG;
     pthread_mutex_unlock(&lock);
     if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
     return result;
 }
+static int translate(const char *guest,char *out,size_t size) { return locate(guest,out,size,NULL); }
 static int host_flags(int flags) {
     int r;
     switch (flags&3) { case 0: r=O_RDONLY; break; case 1: r=O_WRONLY; break; default: r=O_RDWR; }
@@ -186,6 +195,45 @@ static void convert_stat(const HostStat *s,GuestStat *g) {
 #endif
     g->birthtime=g->ctime;
 }
+static void pkg_stat(int id,const PkgInfo *p,GuestStat *g) {
+    memset(g,0,sizeof(*g)); g->ino=(uint32_t)id+1; g->nlink=1;
+    g->mode=p->directory ? 0040555 : 0100444; g->size=p->length;
+    g->blocks=(p->length+511)/512; g->blksize=4096;
+    g->atime.sec=g->mtime.sec=g->ctime.sec=g->birthtime.sec=p->mtime;
+}
+static int64_t pkg_open_file(const char *path,int flags) {
+    PkgInfo info;
+    int node=pkg_find(pkg_archive,path,&info);
+    if (node<0) return -ENOENT;
+    if ((flags&0x20000) && !info.directory) return -ENOTDIR;
+    Listing *dir=NULL;
+    if (info.directory) {
+        dir=calloc(1,sizeof(*dir));
+        if (!dir) return -ENOMEM;
+        dir->count=info.children+2;
+        dir->names=malloc(dir->count*256);
+        dir->offsets=malloc(dir->count*sizeof(size_t)); dir->types=malloc(dir->count);
+        if (!dir->names || !dir->offsets || !dir->types) { free_listing(dir); return -ENOMEM; }
+        for (size_t i=0;i<dir->count;i++) {
+            char *name=dir->names+i*256;
+            int type=4;
+            if (i<2) strcpy(name,i ? ".." : ".");
+            else type=pkg_child(pkg_archive,node,(uint32_t)i-2,name,256);
+            if (type<0) {free_listing(dir); return -EIO;}
+            dir->offsets[i]=i*256; dir->types[i]=(unsigned char)type;
+        }
+    }
+    pthread_mutex_lock(&lock);
+    int fd=3;
+    while (fd<MAX_FILES && files[fd].used) ++fd;
+    if (fd<MAX_FILES) {
+        files[fd]=(File){.used=1,.host=-1,.dir=dir,.packaged=1,.node=node,.info=info};
+        ++opens;
+    }
+    pthread_mutex_unlock(&lock);
+    if (fd==MAX_FILES) { free_listing(dir); return -EMFILE; }
+    return fd;
+}
 static File *get(int fd) {
     if (fd<3 || fd>=MAX_FILES || !files[fd].used) return NULL;
     return &files[fd];
@@ -221,8 +269,9 @@ static void note_area(const char *guest) {
 static int64_t do_open(const char *guest,int flags,int mode) {
     if (game_path(guest) && (flags & (3|0x8|0x200|0x400|0x800))) return -EROFS;
     char path[1024];
-    int e=translate(guest,path,sizeof(path));
+    int packaged=0, e=locate(guest,path,sizeof(path),&packaged);
     if (e) return -e;
+    if (packaged) return pkg_open_file(path,flags);
 #ifdef _WIN32
     /* Windows cannot open a directory as a CRT descriptor: directories are listings only. */
     (void)mode;
@@ -315,7 +364,25 @@ static void touch_for_write(void *buffer,uint64_t size) {
         *b=*b;
     }
 }
+static int64_t read_pkg_node(int node,uint64_t offset,void *buf,size_t size) {
+    int64_t n=pkg_read(pkg_archive,node,offset,buf,size);
+    if (n<0) return -EIO;
+    __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED);
+    __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
+    return n;
+}
 static int64_t do_read(int fd,void *buffer,uint64_t size) {
+    if (pkg_archive) {
+        pthread_mutex_lock(&lock);
+        File *f=get(fd);
+        if (f && f->packaged) {
+            int64_t n=f->dir ? -EISDIR : read_pkg_node(f->node,f->position,buffer,size);
+            if (n>0) f->position+=(size_t)n;
+            pthread_mutex_unlock(&lock);
+            return n;
+        }
+        pthread_mutex_unlock(&lock);
+    }
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
@@ -327,6 +394,18 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
     return n;
 }
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
+    if (pkg_archive) {
+        pthread_mutex_lock(&lock);
+        File *f=get(fd);
+        int node=(f && f->packaged) ? f->node : -1;
+        int directory=node>=0 && f->info.directory;
+        pthread_mutex_unlock(&lock);
+        if (node>=0) {
+            if (directory) return -EISDIR;
+            if (offset<0) return -EINVAL;
+            return read_pkg_node(node,offset,buffer,size);
+        }
+    }
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
@@ -352,6 +431,19 @@ static int64_t do_pwrite(int fd,const void *buffer,uint64_t size,int64_t offset)
     return n<0 ? -errno : n;
 }
 static int64_t do_lseek(int fd,int64_t offset,int whence) {
+    if (pkg_archive) {
+        pthread_mutex_lock(&lock);
+        File *pf=get(fd);
+        if (pf && pf->packaged) {
+            int64_t base=whence==0 ? 0 : whence==1 ? (int64_t)pf->position : (int64_t)pf->info.length;
+            int64_t pos;
+            if (whence<0 || whence>2 || (pf->dir && whence!=0) || __builtin_add_overflow(base,offset,&pos) || pos<0) pos=-EINVAL;
+            else pf->position=(size_t)pos;
+            pthread_mutex_unlock(&lock);
+            return pos;
+        }
+        pthread_mutex_unlock(&lock);
+    }
     File *f=get(fd);
     if (!f) return -EBADF;
     if (whence<0 || whence>2) return -EINVAL;
@@ -364,6 +456,15 @@ static int64_t do_lseek(int fd,int64_t offset,int whence) {
     return r<0 ? -errno : r;
 }
 static int64_t do_fstat(int fd,GuestStat *out) {
+    if (pkg_archive) {
+        pthread_mutex_lock(&lock);
+        File *f=get(fd);
+        if (f && f->packaged) {
+            if (out) pkg_stat(f->node,&f->info,out);
+            pthread_mutex_unlock(&lock); return out ? 0 : -EFAULT;
+        }
+        pthread_mutex_unlock(&lock);
+    }
     int h=host_fd(fd);
     HostStat s;
 #ifdef _WIN32
@@ -383,9 +484,14 @@ static int64_t do_fstat(int fd,GuestStat *out) {
 }
 static int64_t do_stat(const char *guest,GuestStat *out) {
     char path[1024]; HostStat s;
-    int e=translate(guest,path,sizeof(path));
+    int packaged=0, e=locate(guest,path,sizeof(path),&packaged);
     if (e) return -e;
     if (!out) return -EFAULT;
+    if (packaged) {
+        PkgInfo info; int node=pkg_find(pkg_archive,path,&info);
+        if (node<0) return -ENOENT;
+        pkg_stat(node,&info,out); return 0;
+    }
     if (host_stat(path,&s)) return -errno;
     convert_stat(&s,out); return 0;
 }
@@ -466,8 +572,13 @@ static int64_t do_truncate(const char *guest,int64_t length) {
 static int64_t do_fsync(int fd) { int h=host_fd(fd); if (h<0) return -EBADF; return fsync(h) ? -errno : 0; }
 static int64_t do_access(const char *guest,int mode) {
     char path[1024];
-    int e=translate(guest,path,sizeof(path));
+    int packaged=0,e=locate(guest,path,sizeof(path),&packaged);
     if (e) return -e;
+    if (packaged) {
+        PkgInfo info;
+        if (pkg_find(pkg_archive,path,&info)<0) return -ENOENT;
+        return mode&2 ? -EROFS : 0;
+    }
 #ifdef _WIN32
     return access(path,mode&6) ? -errno : 0; /* X_OK is invalid for the CRT */
 #else

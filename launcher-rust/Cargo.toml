@@ -3,6 +3,7 @@ name = "spartanport-launcher"
 version = "3.2.1"
 edition = "2021"
 rust-version = "1.87"
+autobins = false
 # `cargo run` starts the launcher; `fake-game` is a test helper.
 default-run = "spartanport-launcher"
 

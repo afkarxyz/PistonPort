@@ -174,10 +174,12 @@ target_sources(spartanportgpu PRIVATE third_party/imgui/imgui.cpp third_party/im
     third_party/imgui/imgui_tables.cpp third_party/imgui/imgui_widgets.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp)
 target_include_directories(spartanportgpu PRIVATE third_party/imgui third_party/imgui/backends)
+include(shim/pistonport_hint_icons.cmake)
 target_compile_definitions(spartanportgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     SPARTAN_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
     SPARTAN_TITLE_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../launcher/Cinzel-Black.ttf")
 set_source_files_properties(shim/spartanport_overlay.cpp PROPERTIES
+    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}"
     OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf;${CMAKE_CURRENT_SOURCE_DIR}/../launcher/Cinzel-Black.ttf")
 target_include_directories(spartanportgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include third_party/xess)
 target_compile_definitions(spartanportgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
@@ -431,7 +433,8 @@ target_link_libraries(trophy-toast-test PRIVATE PkgConfig::FFMPEG)
 add_executable(overlay-preview EXCLUDE_FROM_ALL tools/overlay_preview.cpp
     third_party/imgui/backends/imgui_impl_sdlrenderer3.cpp)
 # The overlay's source is compiled here as in the library: same definitions, includes and options.
-target_include_directories(overlay-preview PRIVATE $<TARGET_PROPERTY:spartanportgpu,INCLUDE_DIRECTORIES>)
+target_include_directories(overlay-preview PRIVATE
+    $<TARGET_PROPERTY:spartanportgpu,INCLUDE_DIRECTORIES> "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(overlay-preview PRIVATE $<TARGET_PROPERTY:spartanportgpu,COMPILE_DEFINITIONS>)
 target_compile_options(overlay-preview PRIVATE $<TARGET_PROPERTY:spartanportgpu,COMPILE_OPTIONS>)
 target_link_libraries(overlay-preview PRIVATE spartanportgpu)

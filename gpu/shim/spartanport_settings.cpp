@@ -25,7 +25,7 @@ constexpr const char* GlyphStyles[] = {"off", "xbox", "nintendo", "keyboard", "a
 
 const char* Path() {
     const char* env = std::getenv("SPARTAN_CONFIG");
-    return env && env[0] ? env : "spartanport.ini";
+    return env && env[0] ? env : "pistonport.ini";
 }
 
 float Clamp(float v, float lo, float hi) {
@@ -132,6 +132,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.debug_view = std::clamp(i, 0, DebugViewCount - 1);
     } else if (key == "show_fps") {
         v.show_fps = i != 0;
+    } else if (key == "show_keyboard_hints") {
+        v.show_keyboard_hints = i != 0;
     } else if (key == "display_mode") {
         v.display_mode = SpartanGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
@@ -535,7 +537,7 @@ void Save() {
         return;
     }
     std::fprintf(file,
-                 "# spartanport settings (in-game menu: Insert / R3+L2)\n"
+                 "# PistonPort (in-game menu: Insert / R3+L2)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
                  "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
@@ -549,6 +551,7 @@ void Save() {
     std::fprintf(file, "frame_generation=%s\nframe_generation_frames=%d\n",
                  v.frame_generation == 1 ? "fsr" : "off",
                  v.frame_generation_frames.load());
+    std::fprintf(file, "show_keyboard_hints=%d\n", int(v.show_keyboard_hints.load()));
     std::fprintf(file, "output_res=%dx%d\n", OutputWidths[v.output_res], OutputHeights[v.output_res]);
     std::fprintf(file, "red_orb_multiplier=%.3f\n", v.red_orb_multiplier.load());
     std::fprintf(file, "damage_dealt=%.3f\n", v.damage_dealt.load());

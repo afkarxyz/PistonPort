@@ -4,6 +4,9 @@
 #include "../src/runtime_pad.c"
 
 int spartanportgpu_overlay_captures_input(void) { return 0; }
+void spartanportgpu_keyboard_hints(const SpartanGpuKeyboardBinding *bindings, unsigned count) {
+    (void)bindings; (void)count;
+}
 int spartanportgpu_vibration_percent(void) { return 100; }
 unsigned spartanportgpu_dualsense_features(int *speaker_gain) { *speaker_gain=4; return 0; }
 int spartanportgpu_mouse_prompt_distance(void) { return 48; }

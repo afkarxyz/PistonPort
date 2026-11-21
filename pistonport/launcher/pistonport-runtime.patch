@@ -1,0 +1,161 @@
+diff --git a/gpu/shadps4/core/libraries/videoout/driver.cpp b/gpu/shadps4/core/libraries/videoout/driver.cpp
+index 98619f7..a2fc03a 100644
+--- a/gpu/shadps4/core/libraries/videoout/driver.cpp
++++ b/gpu/shadps4/core/libraries/videoout/driver.cpp
+@@ -697,7 +697,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
+ 
+     // spartanport: with a frame limit (uncapped presets) a queued flip is presented as soon as it
+     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
+-    bool immediate_flips = frame_limit != 0;
++    // A selected Unlimited preset can submit a ready frame between guest
++    // vblanks too. Keep delivering the guest clock at its configured rate.
++    const bool unlimited_presentation = measured_limit && frame_limit == 0;
++    bool immediate_flips = frame_limit != 0 || unlimited_presentation;
+     auto next_paused_draw = std::chrono::steady_clock::now();
+ 
+     while (!token.stop_requested()) {
+@@ -705,7 +708,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
+         if (const u32 limit = current_limit(); limit != frame_limit) {
+             frame_limit = limit;
+             frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);
+-            immediate_flips = limit != 0;
++            immediate_flips = limit != 0 || unlimited_presentation;
+             next_flip = std::chrono::steady_clock::now();
+             std::printf("VideoOut: frame limit %u FPS\n", limit);
+         }
+@@ -779,6 +782,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
+             continue;
+         }
+         while (!token.stop_requested()) {
++            if (std::chrono::steady_clock::now() >= tick_deadline) break;
+             {
+                 std::unique_lock lk{mutex};
+                 if (!request_cv.wait_until(lk, tick_deadline,
+diff --git a/gpu/shim/spartanport_overlay.cpp b/gpu/shim/spartanport_overlay.cpp
+index 1955fde..64dddca 100644
+--- a/gpu/shim/spartanport_overlay.cpp
++++ b/gpu/shim/spartanport_overlay.cpp
+@@ -1065,6 +1065,36 @@ int MenuTabs(const char* const* tabs, int count, int open) {
+     return clicked;
+ }
+ 
++void PistonPortMenu() {
++    auto& settings = SpartanSettings::Get();
++    const auto* view = ImGui::GetMainViewport();
++    ImGui::SetNextWindowPos(view->GetCenter(), ImGuiCond_Appearing, ImVec2(.5f, .5f));
++    ImGui::SetNextWindowSize(ImVec2(460.f * base_scale, 0));
++    bool open = true;
++    if (ImGui::Begin("PistonPort", &open, ImGuiWindowFlags_AlwaysAutoResize |
++                                         ImGuiWindowFlags_NoCollapse)) {
++        ImGui::TextUnformatted("Cars 3: Driven to Win");
++        ImGui::Separator();
++        bool fps = settings.show_fps.load();
++        if (ImGui::Checkbox("Show FPS", &fps)) {
++            settings.show_fps = fps;
++            dirty = true;
++        }
++        int volume = settings.master_volume.load();
++        if (ImGui::SliderInt("Volume", &volume, SpartanSettings::MasterVolumeMin,
++                             SpartanSettings::MasterVolumeMax, "%d%%")) {
++            settings.master_volume = volume;
++            dirty = true;
++        }
++        ImGui::Spacing();
++        ImGui::TextUnformatted("F  Accelerate      A / D  Steer      E  Boost");
++        ImGui::Spacing();
++        if (ImGui::Button("Return to race")) open = false;
++    }
++    ImGui::End();
++    if (!open) SetOpen(false);
++}
++
+ void Menu() {
+     auto& s = SpartanSettings::Get();
+     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+@@ -3385,7 +3415,7 @@ void DrawWindows() {
+         LoadingScreen();
+     }
+     if (menu_open) {
+-        Menu();
++        PistonPortMenu();
+     }
+     if (SpartanSettings::Get().show_fps && !menu_open) {
+         FpsCounter();
+diff --git a/gpu/shim/spartanport_settings.cpp b/gpu/shim/spartanport_settings.cpp
+index b1e84c3..8d4b480 100644
+--- a/gpu/shim/spartanport_settings.cpp
++++ b/gpu/shim/spartanport_settings.cpp
+@@ -25,7 +25,7 @@ constexpr const char* GlyphStyles[] = {"off", "xbox", "nintendo", "keyboard", "a
+ 
+ const char* Path() {
+     const char* env = std::getenv("SPARTAN_CONFIG");
+-    return env && env[0] ? env : "spartanport.ini";
++    return env && env[0] ? env : "pistonport.ini";
+ }
+ 
+ float Clamp(float v, float lo, float hi) {
+@@ -535,7 +535,7 @@ void Save() {
+         return;
+     }
+     std::fprintf(file,
+-                 "# spartanport settings (in-game menu: Insert / R3+L2)\n"
++                 "# PistonPort (in-game menu: Insert / R3+L2)\n"
+                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
+                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
+                  "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
+diff --git a/gpu/shim/spartanportgpu.cpp b/gpu/shim/spartanportgpu.cpp
+index 4869707..9bdf1c1 100644
+--- a/gpu/shim/spartanportgpu.cpp
++++ b/gpu/shim/spartanportgpu.cpp
+@@ -243,7 +243,7 @@ extern "C" int spartanportgpu_init(const SpartanGpuConfig* config) {
+ #endif
+     Core::Emulator::FillElfInfo(*config);
+     // The window carries the project name; the dump's own title stays in ElfInfo (above).
+-    const std::string title = "SpartanPort";
++    const std::string title = "PistonPort | Cars 3: Driven to Win";
+     const s32 width = config->width, height = config->height;
+     g_window_thread = std::thread([title, width, height] {
+         Common::SetCurrentThreadName("spartanport:window");
+diff --git a/packaging/windows/spartanport-probe.manifest b/packaging/windows/spartanport-probe.manifest
+index 474f635..17b1094 100644
+--- a/packaging/windows/spartanport-probe.manifest
++++ b/packaging/windows/spartanport-probe.manifest
+@@ -2,7 +2,7 @@
+ <!-- spartanport (Windows): UTF-8 for the C library's narrow file APIs (game, user and mod paths),
+      long paths, and per-monitor DPI awareness for the SDL window. -->
+ <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+-  <assemblyIdentity type="win32" name="spartanport.spartanport-probe" version="1.0.0.0"/>
++  <assemblyIdentity type="win32" name="PistonPort.Game" version="1.0.0.0"/>
+   <application xmlns="urn:schemas-microsoft-com:asm.v3">
+     <windowsSettings>
+       <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+diff --git a/packaging/windows/spartanport-probe.rc b/packaging/windows/spartanport-probe.rc
+index bdb2858..1e39824 100644
+--- a/packaging/windows/spartanport-probe.rc
++++ b/packaging/windows/spartanport-probe.rc
+@@ -1,4 +1,24 @@
+ #include <winuser.h>
+ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "spartanport-probe.manifest"
+ // The first icon is the one Explorer and the game window show.
+-1 ICON "../../launcher/spartanport.ico"
++1 ICON "../../launcher/piston-game.ico"
++1 VERSIONINFO
++FILEVERSION 1,0,0,0
++PRODUCTVERSION 1,0,0,0
++FILEOS 0x40004
++FILETYPE 1
++BEGIN
++    BLOCK "StringFileInfo"
++    BEGIN
++        BLOCK "040904b0"
++        BEGIN
++            VALUE "FileDescription", "PistonPort - Cars 3: Driven to Win\0"
++            VALUE "ProductName", "PistonPort\0"
++            VALUE "OriginalFilename", "PistonPort.Game.exe\0"
++        END
++    END
++    BLOCK "VarFileInfo"
++    BEGIN
++        VALUE "Translation", 0x409, 1200
++    END
++END

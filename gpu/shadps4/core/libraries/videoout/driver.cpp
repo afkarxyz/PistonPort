@@ -697,7 +697,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     // spartanport: with a frame limit (uncapped presets) a queued flip is presented as soon as it
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
-    bool immediate_flips = frame_limit != 0;
+    // A selected Unlimited preset can submit a ready frame between guest
+    // vblanks too. Keep delivering the guest clock at its configured rate.
+    const bool unlimited_presentation = measured_limit && frame_limit == 0;
+    bool immediate_flips = frame_limit != 0 || unlimited_presentation;
     auto next_paused_draw = std::chrono::steady_clock::now();
 
     while (!token.stop_requested()) {
@@ -705,7 +708,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         if (const u32 limit = current_limit(); limit != frame_limit) {
             frame_limit = limit;
             frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);
-            immediate_flips = limit != 0;
+            immediate_flips = limit != 0 || unlimited_presentation;
             next_flip = std::chrono::steady_clock::now();
             std::printf("VideoOut: frame limit %u FPS\n", limit);
         }
@@ -779,6 +782,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             continue;
         }
         while (!token.stop_requested()) {
+            if (std::chrono::steady_clock::now() >= tick_deadline) break;
             {
                 std::unique_lock lk{mutex};
                 if (!request_cv.wait_until(lk, tick_deadline,

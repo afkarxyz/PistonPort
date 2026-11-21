@@ -398,6 +398,23 @@ static void load_button_maps(void) {
     loaded=true;
     const int pad=apply_button_map(&pad_map,getenv("SPARTAN_PAD_MAP"),false);
     const int keys=apply_button_map(&key_map,getenv("SPARTAN_KEY_MAP"),true);
+    SpartanGpuKeyboardBinding hints[MAP_CAPACITY];
+    unsigned hint_count=0;
+    for (size_t i=0;i<key_map.count;++i) {
+        const ButtonSource entry=key_map.entries[i];
+        if (entry.source<=SDL_SCANCODE_UNKNOWN || entry.source>=SDL_SCANCODE_COUNT) continue;
+        const char *key=SDL_GetScancodeName((SDL_Scancode)entry.source);
+        if (entry.source==SDL_SCANCODE_ESCAPE) key="Esc";
+        if (entry.source==SDL_SCANCODE_RETURN) key="Enter";
+        if (!key || !*key) continue;
+        for (size_t j=0;j<sizeof(ps_names)/sizeof(*ps_names);++j) {
+            if (ps_names[j].ps==entry.ps) {
+                hints[hint_count++]=(SpartanGpuKeyboardBinding){ps_names[j].name,key};
+                break;
+            }
+        }
+    }
+    spartanportgpu_keyboard_hints(hints,hint_count);
     if (pad || keys) printf("Runtime: pad map: %d gamepad and %d keyboard buttons remapped\n",pad,keys);
     stick_deadzone[0]=deadzone_setting("SPARTAN_DEADZONE_LEFT");
     stick_deadzone[1]=deadzone_setting("SPARTAN_DEADZONE_RIGHT");

@@ -1,0 +1,18 @@
+[package]
+name = "piston_pkg"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-or-later"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+aes = "0.8"
+anyhow = "1"
+cbc = "0.1"
+memmap2 = "0.9"
+orbis-pkg = "=0.1.0"
+orbis-pfs = "=0.1.0"
+roxmltree = "0.21"
+self_cell = "1"

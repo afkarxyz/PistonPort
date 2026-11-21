@@ -42,6 +42,12 @@ int spartanportgpu_choice_confirm(const char *title, const char *const *items, i
                                  const unsigned char *png, uint64_t size, const char *caption, const char *unavailable);
 /* 1 while the in-game settings menu is open: the game's pad input is held neutral. */
 int spartanportgpu_overlay_captures_input(void);
+typedef struct {
+    const char *button; /* virtual PlayStation button */
+    const char *key;    /* resolved keyboard key */
+} SpartanGpuKeyboardBinding;
+/* Copies the keyboard bindings after the runtime applies its input configuration. */
+void spartanportgpu_keyboard_hints(const SpartanGpuKeyboardBinding *bindings, unsigned count);
 /* Game threads: returns once the game is no longer paused by the menu or the trophy list. */
 void spartanportgpu_wait_while_paused(void);
 /* Controller vibration strength set in the menu, 0 (off) to 100 (the game's own). */
@@ -126,8 +132,17 @@ typedef struct {
     const char *common, *rare, *very_rare, *ultra_rare; /* the rarity tiers */
     const char *hint_order, *hint_notifications;      /* the keys of the order and of the second page */
 } SpartanGpuTrophyLabels;
+enum {
+    SPARTAN_TROPHY_GRADE_FROM_ICON = -1,
+    SPARTAN_TROPHY_GRADE_UNKNOWN = 0,
+    SPARTAN_TROPHY_GRADE_BRONZE,
+    SPARTAN_TROPHY_GRADE_SILVER,
+    SPARTAN_TROPHY_GRADE_GOLD,
+    SPARTAN_TROPHY_GRADE_PLATINUM
+};
 typedef struct {
     int id;
+    int grade;
     const char *name, *detail;
     const unsigned char *png;
     uint64_t png_size;

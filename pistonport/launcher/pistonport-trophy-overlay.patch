@@ -1,0 +1,108 @@
+diff --git a/gpu/shim/spartanport_overlay.cpp b/gpu/shim/spartanport_overlay.cpp
+index 64dddca..052db80 100644
+--- a/gpu/shim/spartanport_overlay.cpp
++++ b/gpu/shim/spartanport_overlay.cpp
+@@ -1798,6 +1798,7 @@ ImTextureRef TrophyIcon(int id) {
+ 
+ // The launcher's trophy texts in a language (<user>/trophy_texts/<code>.txt); empty when missing.
+ SpartanTrophyTexts::Texts ReadTrophyTexts(std::string_view code) {
++    if (std::getenv("PISTONPORT_TROPHY_METADATA")) return {};
+     const char* dir = std::getenv("SPARTAN_USER_DIR");
+     const std::string path = std::string(dir && dir[0] ? dir : "user") + "/trophy_texts/" + std::string(code) + ".txt";
+     std::ifstream file(path, std::ios::binary);
+@@ -3557,13 +3558,13 @@ extern "C" void spartanportgpu_trophy_setup(const SpartanGpuTrophyLabels* labels
+         return;
+     }
+     struct Item {
+-        int id;
++        int id, grade;
+         std::string name, detail;
+         std::vector<unsigned char> png;
+     };
+     std::vector<Item> list;
+     for (int i = 0; i < count; i++) {
+-        list.push_back({items[i].id, items[i].name ? items[i].name : "", items[i].detail ? items[i].detail : "",
++        list.push_back({items[i].id, items[i].grade, items[i].name ? items[i].name : "", items[i].detail ? items[i].detail : "",
+                         items[i].png && items[i].png_size
+                             ? std::vector<unsigned char>(items[i].png, items[i].png + items[i].png_size)
+                             : std::vector<unsigned char>()});
+@@ -3608,7 +3609,9 @@ extern "C" void spartanportgpu_trophy_setup(const SpartanGpuTrophyLabels* labels
+             if (!item.png.empty()) {
+                 SpartanPng::DecodeRgba(item.png.data(), item.png.size(), row.image); // empty on failure
+             }
+-            row.grade = SpartanToast::GradeFromIcon(row.image.rgba.data(), row.image.width, row.image.height);
++            row.grade = item.grade == SPARTAN_TROPHY_GRADE_FROM_ICON
++                ? SpartanToast::GradeFromIcon(row.image.rgba.data(), row.image.width, row.image.height)
++                : static_cast<SpartanToast::Grade>(item.grade);
+             if (row.id >= 0 && row.id < 128) {
+                 if (int(entries.size()) <= row.id) {
+                     entries.resize(size_t(row.id) + 1);
+diff --git a/gpu/spartanportgpu.h b/gpu/spartanportgpu.h
+index 4b6632f..23a0f2f 100644
+--- a/gpu/spartanportgpu.h
++++ b/gpu/spartanportgpu.h
+@@ -126,8 +126,17 @@ typedef struct {
+     const char *common, *rare, *very_rare, *ultra_rare; /* the rarity tiers */
+     const char *hint_order, *hint_notifications;      /* the keys of the order and of the second page */
+ } SpartanGpuTrophyLabels;
++enum {
++    SPARTAN_TROPHY_GRADE_FROM_ICON = -1,
++    SPARTAN_TROPHY_GRADE_UNKNOWN = 0,
++    SPARTAN_TROPHY_GRADE_BRONZE,
++    SPARTAN_TROPHY_GRADE_SILVER,
++    SPARTAN_TROPHY_GRADE_GOLD,
++    SPARTAN_TROPHY_GRADE_PLATINUM
++};
+ typedef struct {
+     int id;
++    int grade;
+     const char *name, *detail;
+     const unsigned char *png;
+     uint64_t png_size;
+diff --git a/src/runtime_services.c b/src/runtime_services.c
+index e4a4aaa..112d3ce 100644
+--- a/src/runtime_services.c
++++ b/src/runtime_services.c
+@@ -646,7 +646,13 @@ static const char *const trophy_label_keys[TROPHY_LABELS]={"heading","notice","u
+ static char trophy_label[TROPHY_LABELS][200];
+ static char trophy_names[TROPHY_MAX][64];
+ static char trophy_details[TROPHY_MAX][160];
++static int trophy_grades[TROPHY_MAX];
+ static FILE *trophy_open_text(char *path,size_t size) {
++    const char *metadata=getenv("PISTONPORT_TROPHY_METADATA");
++    if (metadata && *metadata) {
++        snprintf(path,size,"%s",metadata);
++        return fopen(metadata,"rb");
++    }
+     const char *dir=trophy_dir();
+     static const char *const files[2]={"trophy_texts.txt","trophy_names.txt"};
+     for (int i=0;i<2;i++) {
+@@ -674,6 +680,19 @@ static void trophy_load_names(void) {
+         while (*value==' ') value++;
+         if (*p=='@') {
+             *eq=0;
++            if (!strncmp(p,"@grade.",7)) {
++                char *end;
++                long id=strtol(p+7,&end,10);
++                if (*end==0 && end!=p+7 && id>=0 && id<TROPHY_MAX && strlen(value)==1) {
++                    switch (value[0]) {
++                        case 'B': trophy_grades[id]=SPARTAN_TROPHY_GRADE_BRONZE; break;
++                        case 'S': trophy_grades[id]=SPARTAN_TROPHY_GRADE_SILVER; break;
++                        case 'G': trophy_grades[id]=SPARTAN_TROPHY_GRADE_GOLD; break;
++                        case 'P': trophy_grades[id]=SPARTAN_TROPHY_GRADE_PLATINUM; break;
++                    }
++                }
++                continue;
++            }
+             for (int k=0;k<TROPHY_LABELS;k++) if (!strcmp(p+1,trophy_label_keys[k])) snprintf(trophy_label[k],sizeof(trophy_label[k]),"%s",value);
+             continue;
+         }
+@@ -748,6 +767,8 @@ static void trophy_load_once(void) {
+         const unsigned char *png=0; uint64_t png_size=0;
+         if (!trophy_icon(id,&png,&png_size)) { png=0; png_size=0; }
+         infos[i].id=id; infos[i].name=trophy_names[id]; infos[i].detail=trophy_details[id];
++        infos[i].grade=(trophy_grades[id] || getenv("PISTONPORT_TROPHY_METADATA"))
++            ? trophy_grades[id] : SPARTAN_TROPHY_GRADE_FROM_ICON;
+         infos[i].png=png; infos[i].png_size=png_size;
+     }
+     /* SpartanGpuTrophyLabels: one pointer per key, in the order of trophy_label_keys (0: English). */
