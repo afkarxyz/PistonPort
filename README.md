@@ -6,7 +6,9 @@ PistonPort is an unofficial Windows x64 port of *Cars 3: Driven to Win* built on
 
 ## Play on Windows
 
-You need a Vulkan-capable graphics driver and either a playable PS4 PKG or an extracted dump of the supported game release. Build `PistonPort-Windows-x64.zip` using the [Windows build instructions](pistonport/README.md#building).
+[Download PistonPort for Windows x64](https://github.com/afkarxyz/PistonPort/releases/download/v1.0.0/PistonPort-Windows-x64.zip)
+
+You need a Vulkan-capable graphics driver and either a playable PS4 PKG or an extracted dump of the supported game release.
 
 1. Extract the ZIP and keep `PistonPort.Runtime` beside `PistonPort.exe`.
 2. Open `PistonPort.exe`. Select **Choose PKG…** to open the package directly or **Choose Folder…** to select a dump containing `eboot.bin`.
