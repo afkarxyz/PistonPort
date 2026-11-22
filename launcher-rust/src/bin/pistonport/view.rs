@@ -479,51 +479,6 @@ fn garage(app: &App, kit: &Kit) -> El {
     } else {
         page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
     }
-    if !app.backdrops.is_empty() {
-        let total = app.backdrops.len() + 1;
-        let current = app.backdrop_index + 1;
-        let caption = if app.backdrop_loading {
-            "Loading…".to_owned()
-        } else {
-            format!("{}  ·  {current}/{total}", app.active_backdrop_label())
-        };
-        let nav_btn = |key: &'static str, label: &'static str, delta: i32| {
-            Button::new(label)
-                .variant(ButtonVariant::Ghost)
-                .control_size(ControlSize::Regular)
-                .on_press_tx(move |app: &mut App, tx| {
-                    app.update(Message::CycleBackdrop(delta), tx);
-                })
-                .build(kit)
-                .key(key)
-        };
-        let pill = row()
-            .key("backdrop-switcher")
-            .center_y()
-            .gap(4.0)
-            .px(8.0)
-            .py(4.0)
-            .radius(999.0)
-            .fill(kit.c.layer_01.alpha(0.84))
-            .border(1.0, kit.c.border_muted)
-            .child(nav_btn("bg-prev", "‹", -1))
-            .child(
-                text(caption)
-                    .font(kit.ty.small)
-                    .color(kit.c.text_base)
-                    .px(6.0),
-            )
-            .child(nav_btn("bg-next", "›", 1))
-            .child(nav_btn("bg-shuffle", "↻", 0));
-        let overlay = col()
-            .w_full()
-            .h_full()
-            .justify_end()
-            .items_end()
-            .padding(14.0)
-            .child(pill);
-        page = page.child(overlay);
-    }
     page
 }
 

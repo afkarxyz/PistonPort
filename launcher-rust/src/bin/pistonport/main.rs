@@ -109,7 +109,6 @@ enum Message {
     SaveDone(Result<Vec<u8>, String>, bool),
     TrophiesLoaded(String, Result<Vec<Trophy>, String>),
     BackdropsReady(String, Vec<BackdropInfo>),
-    CycleBackdrop(i32),
     AutoCycleBackdrop(u64),
     BackdropLoaded(String, Result<Image, String>),
     OpenLog,
@@ -406,17 +405,6 @@ impl App {
         }
     }
 
-    pub fn active_backdrop_label(&self) -> String {
-        if self.backdrop_index == 0 {
-            "Cover Art".to_owned()
-        } else {
-            self.backdrops
-                .get(self.backdrop_index - 1)
-                .map(|b| b.label.clone())
-                .unwrap_or_else(|| "Cover Art".to_owned())
-        }
-    }
-
     fn schedule_backdrop_timer(&mut self) {
         self.backdrop_timer_gen += 1;
         let token = self.backdrop_timer_gen;
@@ -425,7 +413,7 @@ impl App {
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|&s| s >= 1)
-            .unwrap_or(8);
+            .unwrap_or(4);
         let _ = rune::task::spawn("PistonPort backdrop timer", move || {
             std::thread::sleep(std::time::Duration::from_secs(secs));
             handle.update(move |state, tx| state.update(Message::AutoCycleBackdrop(token), tx));
@@ -1060,27 +1048,6 @@ impl App {
                     } else if !self.backdrops.is_empty() {
                         self.schedule_backdrop_timer();
                     }
-                }
-            }
-            Message::CycleBackdrop(delta) => {
-                let total = self.backdrops.len() + 1;
-                if total > 1 {
-                    let next = if delta == 0 {
-                        let nanos = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.subsec_nanos() as usize)
-                            .unwrap_or(1);
-                        let mut pick = nanos % total;
-                        if pick == self.backdrop_index {
-                            pick = (pick + 1) % total;
-                        }
-                        pick
-                    } else if delta > 0 {
-                        (self.backdrop_index + 1) % total
-                    } else {
-                        (self.backdrop_index + total - 1) % total
-                    };
-                    self.apply_backdrop_index(next, true, Some(tx));
                 }
             }
             Message::AutoCycleBackdrop(token) => {

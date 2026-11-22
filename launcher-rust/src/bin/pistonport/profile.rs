@@ -15,7 +15,6 @@ pub struct Paths {
 #[derive(Clone, Debug)]
 pub struct BackdropInfo {
     pub id: String,
-    pub label: String,
     pub tbody: String,
 }
 
@@ -99,14 +98,13 @@ impl Paths {
         let mut out = Vec::new();
         for line in String::from_utf8_lossy(&bytes).lines() {
             let mut parts = line.splitn(3, '\t');
-            let (Some(id), Some(label), Some(tbody)) = (parts.next(), parts.next(), parts.next())
+            let (Some(id), Some(_label), Some(tbody)) = (parts.next(), parts.next(), parts.next())
             else {
                 continue;
             };
             if !id.is_empty() && !tbody.is_empty() {
                 out.push(BackdropInfo {
                     id: id.to_owned(),
-                    label: label.to_owned(),
                     tbody: tbody.to_owned(),
                 });
             }
