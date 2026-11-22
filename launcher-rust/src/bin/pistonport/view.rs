@@ -479,14 +479,25 @@ fn garage(app: &App, kit: &Kit) -> El {
     } else {
         page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
     }
-    let play_btn = action(
-        kit,
-        "play",
-        if app.playing { "Playing" } else { "Play" },
-        &icons::PLAY,
-        (!app.busy).then_some(Message::Play),
-        ButtonVariant::Contrast,
-    )
+    let play_btn = if app.playing {
+        action(
+            kit,
+            "stop",
+            if app.stopping { "Stopping…" } else { "Stop" },
+            &icons::STOP,
+            (!app.stopping).then_some(Message::StopGame),
+            ButtonVariant::Danger,
+        )
+    } else {
+        action(
+            kit,
+            "play",
+            "Play",
+            &icons::PLAY,
+            (!app.busy).then_some(Message::Play),
+            ButtonVariant::Contrast,
+        )
+    }
     .w(176.0)
     .h(48.0);
     let mut cta = col().items_end().gap(10.0).child(play_btn);

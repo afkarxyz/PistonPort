@@ -32,3 +32,9 @@ lucide!(CHECK, "check");
 lucide!(LOCK, "lock");
 lucide!(COFFEE, "coffee");
 lucide!(ALERT, "circle-alert");
+
+pub static STOP: Icon = Icon {
+    name: "square",
+    view: 24.0,
+    body: r#"<rect width="14" height="14" x="5" y="5" rx="2"/>"#,
+};

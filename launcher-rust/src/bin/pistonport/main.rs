@@ -117,6 +117,7 @@ enum Message {
     DismissToast(u64),
     Gamepad(GamepadAction),
     Play,
+    StopGame,
     GameDone(Result<Vec<u8>, String>),
     Minimize,
     Close,
@@ -181,6 +182,7 @@ struct App {
     toast_seq: u64,
     busy: bool,
     playing: bool,
+    stopping: bool,
     status: String,
     error: bool,
 }
@@ -251,6 +253,7 @@ impl App {
             toast_seq: 1,
             busy: has_source,
             playing: false,
+            stopping: false,
             status: if has_source {
                 "Loading Cars 3: Driven to Win…".into()
             } else {
@@ -1118,20 +1121,32 @@ impl App {
                     }
                 }
             }
+            Message::StopGame if self.playing && !self.stopping => {
+                self.stopping = true;
+                self.report("Stopping Game…", false);
+                let _ = rune::task::spawn("PistonPort stop game", || {
+                    Paths::stop_game();
+                });
+            }
             Message::GameDone(result) => {
                 self.busy = false;
                 self.playing = false;
+                let was_stopping = std::mem::take(&mut self.stopping);
                 self.playing_flag.store(false, Ordering::Relaxed);
                 self.settings = Settings::load(&self.paths.profile);
                 self.pad = load_bindings(&self.paths.profile.join("controller.map"));
                 (self.slots, self.selected) = profile::slots(&self.paths.profile);
                 self.refresh_trophy_progress();
-                match result {
-                    Ok(_) => self.report("Ready to Play", false),
-                    Err(error) => {
-                        tx.animated();
-                        self.report("Ready to Play", false);
-                        self.push_toast("Game Exited With an Error", Some(error), true, true);
+                if was_stopping {
+                    self.report("Ready to Play", false);
+                } else {
+                    match result {
+                        Ok(_) => self.report("Ready to Play", false),
+                        Err(error) => {
+                            tx.animated();
+                            self.report("Ready to Play", false);
+                            self.push_toast("Game Exited With an Error", Some(error), true, true);
+                        }
                     }
                 }
                 self.handle.open();

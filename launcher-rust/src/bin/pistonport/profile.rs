@@ -264,6 +264,18 @@ impl Paths {
             .arg(&self.profile);
         run(command)
     }
+
+    pub fn stop_game() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "PistonPort.Game.exe"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+    }
 }
 
 fn run(mut command: Command) -> Result<Vec<u8>, String> {
