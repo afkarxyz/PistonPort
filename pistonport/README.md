@@ -21,7 +21,7 @@ The standalone launcher uses `%LOCALAPPDATA%\PistonPort`. Set `PISTONPORT_PROFIL
 
 ## Save Slots
 
-In **Saves**, select **Use My Progress** to start or continue your own game. **Import Save…** creates a separate slot from a decrypted `CUSA07027` ZIP or its `P0` file, and **Export…** backs up any slot into a re-importable ZIP archive. The built-in **All Skill Checks** save includes Smokey and 136/136 Skill Checks. It creates a writable copy on first use.
+In **Saves**, select **Use My Progress** to start or continue your own game. **Import Save…** creates a separate slot from a decrypted `CUSA07027` ZIP or its `P0` file, and **Export…** backs up any slot into a re-importable ZIP archive. The built-in **100% Complete** save includes all characters unlocked, 136/136 Skill Checks, and 22/22 trophies. It creates a writable copy on first use.
 
 The built-in save also includes completed skill counters, gold event and cup results, and 22 local PS4 trophies in PistonPort's rethemed **F8 / R3+R2** in-game overlay.
 

@@ -8,7 +8,7 @@
 
 ## Playing
 
-Open **Saves** and select **Use My Progress** to start or continue a game with your own progress. Use **Import Save…** for a decrypted CUSA07027 ZIP or the **P0** file in its save folder, and **Export…** beside any slot to back up your progress and trophies as a re-importable ZIP. **All Skill Checks** is the built-in save with Smokey unlocked and 136/136 Skill Checks. The launcher creates a writable copy on first use.
+Open **Saves** and select **Use My Progress** to start or continue a game with your own progress. Use **Import Save…** for a decrypted CUSA07027 ZIP or the **P0** file in its save folder, and **Export…** beside any slot to back up your progress and trophies as a re-importable ZIP. **100% Complete** is the built-in save with all characters unlocked, 136/136 Skill Checks, and 22/22 trophies. The launcher creates a writable copy on first use.
 
 The built-in save includes completed skill counters, gold event and cup results, and all 22 offline trophies. Press **F8** (or **R3 + R2** on a controller) in-game to open the Trophy & Notifications overlay with the original English names and grades read from the game.
 

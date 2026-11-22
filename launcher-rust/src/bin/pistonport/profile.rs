@@ -253,7 +253,7 @@ pub fn slots(profile: &Path) -> (Vec<Slot>, Slot) {
     };
     let mut choices = vec![
         Slot::new("default", "My Progress"),
-        Slot::new("builtin-complete-v2", "All Skill Checks (Built-In)"),
+        Slot::new("builtin-complete-v2", "100% Complete (Built-In)"),
     ];
     if let Ok(entries) = fs::read_dir(profile.join("save-slots")) {
         let mut imports: Vec<_> = entries.flatten().collect();

@@ -1448,7 +1448,7 @@ fn saves(app: &App, kit: &Kit) -> El {
             app,
             kit,
             slot,
-            "Smokey Unlocked · 136 / 136 Skill Checks · 22 / 22 Trophies",
+            "All Characters Unlocked · 136 / 136 Skill Checks · 22 / 22 Trophies",
         ));
     }
     let mut imported = app
