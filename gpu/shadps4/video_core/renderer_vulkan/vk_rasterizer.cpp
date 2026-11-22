@@ -3876,19 +3876,24 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         auto& image = texture_cache.GetImage(image_id);
 
         const auto slice = image_view.info.range.base.layer;
+        const bool htile_clear = texture_cache.IsMetaCleared(htile_address, slice);
         const bool is_depth_clear =
             (regs.depth_render_control.depth_clear_enable && regs.depth_control.depth_enable &&
              regs.depth_control.depth_write_enable) ||
-            texture_cache.IsMetaCleared(htile_address, slice);
-        const bool is_stencil_clear = regs.depth_render_control.stencil_clear_enable;
+            htile_clear;
+        const bool is_stencil_clear =
+            regs.depth_render_control.stencil_clear_enable ||
+            (htile_clear && regs.depth_buffer.StencilValid());
         texture_cache.TouchMeta(htile_address, slice, false);
         ASSERT(desc.view_info.range.extent.levels == 1 && !image.binding.needs_rebind);
 
         const bool has_stencil = image.info.props.has_stencil;
-        // Stencil writes can be enabled while depth writes are off.
+        // Stencil writes can be enabled while depth writes are off; clears also require a writable layout.
+        const bool depth_write = desc.view_info.is_storage || is_depth_clear;
         const bool stencil_write =
-            has_stencil && regs.depth_control.stencil_enable && !desc.view_info.is_storage;
-        const auto new_layout = desc.view_info.is_storage
+            has_stencil &&
+            ((regs.depth_control.stencil_enable && !depth_write) || is_stencil_clear);
+        const auto new_layout = depth_write
                                     ? has_stencil ? vk::ImageLayout::eDepthStencilAttachmentOptimal
                                                   : vk::ImageLayout::eDepthAttachmentOptimal
                                 : stencil_write
@@ -3901,7 +3906,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             census.stencil_write = stencil_write;
             census.stencil_clear = is_stencil_clear;
             census.depth_clear = !is_depth_clear ? PassCensus::DepthClear::None
-                                 : texture_cache.IsMetaCleared(htile_address, slice)
+                                 : htile_clear
                                      ? PassCensus::DepthClear::Htile
                                      : PassCensus::DepthClear::Register;
             census.depth_layout = vk::to_string(new_layout);
