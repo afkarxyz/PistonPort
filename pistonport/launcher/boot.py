@@ -306,7 +306,7 @@ def resolve_runtime_env(values, base_env=None, *, ram_gib=None, adapters=None):
     fov_scale = parse_fov_scale(values.get("fov_scale", "100"))
     motion_blur = values.get("motion_blur", "0") == "1"
     bloom = values.get("bloom", "1") != "0"
-    skip_intro = values.get("skip_intro", "0") == "1"
+    skip_intro = values.get("skip_intro", "1") != "0"
     high_lod = values.get("high_lod", "0") == "1"
     anisotropy = values.get("anisotropy", "16")
     if anisotropy not in VALID_ANISOTROPIES:
@@ -420,7 +420,7 @@ def prepare_variant_image(
     shadow_resolution,
     motion_blur,
     fov_scale=100,
-    skip_intro=False,
+    skip_intro=True,
     high_lod=False,
     bloom=True,
 ):
@@ -1043,7 +1043,7 @@ def main():
             config.write_bytes(
                 legacy.read_bytes()
                 if legacy.is_file()
-                else b"fps_limit=60\nshow_fps=1\nanisotropy=16\nmotion_blur=0\nasync_shaders=1\n"
+                else b"fps_limit=60\nshow_fps=1\nanisotropy=16\nmotion_blur=0\nskip_intro=1\nasync_shaders=1\n"
             )
         values = parse_ini(config.read_text(encoding="utf-8-sig"))
         preserved = {k: values[k] for k in LAUNCHER_PRESERVED_KEYS if k in values}

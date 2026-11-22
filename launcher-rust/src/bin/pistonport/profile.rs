@@ -583,7 +583,7 @@ impl Default for Settings {
             motion_blur: false,
             bloom: true,
             fov: FOV_SCALES[0],
-            skip_intro: false,
+            skip_intro: true,
             high_lod: false,
             fsr1: false,
             rcas: false,
@@ -678,7 +678,7 @@ impl Settings {
                 "motion_blur" => settings.motion_blur = value == "1",
                 "bloom" => settings.bloom = value != "0",
                 "fov_scale" => settings.fov = find_choice(FOV_SCALES, value, FOV_SCALES[0]),
-                "skip_intro" => settings.skip_intro = value == "1",
+                "skip_intro" => settings.skip_intro = value != "0",
                 "high_lod" => settings.high_lod = value == "1",
                 "fsr1" => settings.fsr1 = value == "1",
                 "rcas" => settings.rcas = value == "1",
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(defaults.anisotropy.0, "16");
         assert!(!defaults.motion_blur);
         assert_eq!(defaults.fov.0, "100");
-        assert!(!defaults.skip_intro);
+        assert!(defaults.skip_intro);
         assert!(!defaults.high_lod);
         assert!(defaults.async_shaders);
         assert_eq!(defaults.vibration, 100);
@@ -853,7 +853,7 @@ mod tests {
         custom.anisotropy = ANISOTROPIES[2];
         custom.motion_blur = true;
         custom.fov = FOV_SCALES[2];
-        custom.skip_intro = true;
+        custom.skip_intro = false;
         custom.high_lod = true;
         custom.vibration = 60;
         custom.glyph_style = GLYPH_STYLES[2];
