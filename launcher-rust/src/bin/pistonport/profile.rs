@@ -12,6 +12,13 @@ pub struct Paths {
     output: PathBuf,
 }
 
+#[derive(Clone, Debug)]
+pub struct BackdropInfo {
+    pub id: String,
+    pub label: String,
+    pub tbody: String,
+}
+
 #[derive(Clone)]
 pub struct SourceInspection {
     pub identity: String,
@@ -81,6 +88,47 @@ impl Paths {
         let mut command = self.python("boot.py");
         command.args(["--inspect-trophies", "--game", path]);
         run(command)
+    }
+
+    pub fn list_backdrops(&self, path: &str) -> Vec<BackdropInfo> {
+        let mut command = self.python("boot.py");
+        command.args(["--list-backdrops", "--game", path]);
+        let Ok(bytes) = run(command) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            let mut parts = line.splitn(3, '\t');
+            let (Some(id), Some(label), Some(tbody)) = (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            if !id.is_empty() && !tbody.is_empty() {
+                out.push(BackdropInfo {
+                    id: id.to_owned(),
+                    label: label.to_owned(),
+                    tbody: tbody.to_owned(),
+                });
+            }
+        }
+        out
+    }
+
+    pub fn load_backdrop(&self, source: &str, entry: &BackdropInfo) -> Result<Vec<u8>, String> {
+        let cache_dir = self.profile.join("cache").join("backdrops");
+        let cached_path = cache_dir.join(format!("{}.jpg", entry.id));
+        if let Ok(bytes) = fs::read(&cached_path)
+            && !bytes.is_empty()
+        {
+            return Ok(bytes);
+        }
+        let mut command = self.python("boot.py");
+        command.args(["--read-backdrop", &entry.tbody, "--game", source]);
+        let raw = run(command)?;
+        let jpeg = decode_gnf_1d_thin_to_jpeg(&raw)?;
+        let _ = fs::create_dir_all(&cache_dir);
+        let _ = fs::write(&cached_path, &jpeg);
+        Ok(jpeg)
     }
 
     pub fn save_action(&self, action: &str, value: &Path) -> Result<Vec<u8>, String> {
@@ -717,6 +765,46 @@ fn find_choice(choices: &[Choice], key: &str, fallback: Choice) -> Choice {
         .find(|item| item.0 == key)
         .copied()
         .unwrap_or(fallback)
+}
+
+fn decode_gnf_1d_thin_to_jpeg(raw: &[u8]) -> Result<Vec<u8>, String> {
+    const W: usize = 1920;
+    const H: usize = 1080;
+    const HEADER: usize = 256;
+    if raw.len() != HEADER + W * H * 4 || !raw.starts_with(b"GNF ") {
+        return Err("Unsupported PS4 loading screen texture format.".into());
+    }
+    let src = &raw[HEADER..];
+    let mut rgb = vec![0u8; W * H * 3];
+    let mut lut = [(0usize, 0usize); 64];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        let lx = (i & 1) | ((i & 4) >> 1) | ((i & 16) >> 2);
+        let ly = ((i & 2) >> 1) | ((i & 8) >> 2) | ((i & 32) >> 3);
+        *slot = (lx, ly);
+    }
+    let tiles_x = W / 8;
+    let tiles_y = H / 8;
+    let mut t_off = 0usize;
+    for ty in 0..tiles_y {
+        let by = ty * 8;
+        for tx in 0..tiles_x {
+            let bx = tx * 8;
+            for (i, &(lx, ly)) in lut.iter().enumerate() {
+                let p = t_off + i * 4;
+                let q = ((by + ly) * W + (bx + lx)) * 3;
+                // PS4 GNF loading screens are BGRA8 -> convert to RGB8.
+                rgb[q] = src[p + 2];
+                rgb[q + 1] = src[p + 1];
+                rgb[q + 2] = src[p];
+            }
+            t_off += 256;
+        }
+    }
+    let mut out = Vec::with_capacity(200_000);
+    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+    enc.encode(&rgb, W as u32, H as u32, image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("Failed to encode backdrop image: {e}"))?;
+    Ok(out)
 }
 
 #[cfg(test)]

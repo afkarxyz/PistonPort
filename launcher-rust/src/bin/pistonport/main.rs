@@ -18,7 +18,9 @@ use std::{
     },
 };
 
-use profile::{Choice, HardwareInfo, Paths, Preset, Settings, Slot, SourceInspection, UpdateInfo};
+use profile::{
+    BackdropInfo, Choice, HardwareInfo, Paths, Preset, Settings, Slot, SourceInspection, UpdateInfo,
+};
 use rfd::FileDialog;
 use rune::{
     AppHandle, AppSpec, Image, ImageCache, TextEdit, Tx, Waker, WindowHandle, WindowOptions,
@@ -106,6 +108,9 @@ enum Message {
     ExportDone(Result<PathBuf, String>),
     SaveDone(Result<Vec<u8>, String>, bool),
     TrophiesLoaded(String, Result<Vec<Trophy>, String>),
+    BackdropsReady(String, Vec<BackdropInfo>),
+    CycleBackdrop(i32),
+    BackdropLoaded(String, Result<Image, String>),
     OpenLog,
     CopyCrashReport,
     ReportCopied(Result<(), String>),
@@ -161,6 +166,10 @@ struct App {
     saved_source: String,
     game_identity: Option<(String, String)>,
     assets: Option<view::Artwork>,
+    default_cover: Option<Image>,
+    backdrops: Vec<BackdropInfo>,
+    backdrop_index: usize,
+    backdrop_loading: bool,
     pad: [Pad; 15],
     slots: Vec<Slot>,
     selected: Slot,
@@ -223,6 +232,10 @@ impl App {
             saved_source: source.clone(),
             game_identity: None,
             assets: None,
+            default_cover: None,
+            backdrops: Vec::new(),
+            backdrop_index: 0,
+            backdrop_loading: false,
             handle,
             native_window,
             paths,
@@ -370,9 +383,76 @@ impl App {
             self.game_identity = None;
             None
         };
+        self.default_cover = cover.clone();
+        self.backdrop_index = 0;
+        self.backdrop_loading = false;
         if let Some(assets) = &mut self.assets {
             assets.cover = cover;
         }
+        if self.game_identity.is_some() {
+            let paths = self.paths.clone();
+            let src = source.to_owned();
+            self.background(move || {
+                let list = paths.list_backdrops(&src);
+                Message::BackdropsReady(src, list)
+            });
+        } else {
+            self.backdrops.clear();
+        }
+    }
+
+    pub fn active_backdrop_label(&self) -> String {
+        if self.backdrop_index == 0 {
+            "Cover Art".to_owned()
+        } else {
+            self.backdrops
+                .get(self.backdrop_index - 1)
+                .map(|b| b.label.clone())
+                .unwrap_or_else(|| "Cover Art".to_owned())
+        }
+    }
+
+    fn apply_backdrop_index(&mut self, index: usize, persist: bool) {
+        let total = self.backdrops.len() + 1;
+        let idx = index % total;
+        self.backdrop_index = idx;
+        if idx == 0 {
+            self.backdrop_loading = false;
+            if let Some(assets) = &mut self.assets {
+                assets.cover = self.default_cover.clone();
+            }
+            if persist {
+                let _ = profile::write(&self.paths.profile.join("garage-backdrop.txt"), "cover");
+            }
+            return;
+        }
+        let Some(entry) = self.backdrops.get(idx - 1).cloned() else {
+            return;
+        };
+        if persist {
+            let _ = profile::write(&self.paths.profile.join("garage-backdrop.txt"), &entry.id);
+        }
+        let Some(cache) = self.assets.as_ref().map(|a| a.cache.clone()) else {
+            return;
+        };
+        let source = self.saved_source.clone();
+        if source.is_empty() {
+            return;
+        }
+        self.backdrop_loading = true;
+        let paths = self.paths.clone();
+        self.background(move || {
+            let id = entry.id.clone();
+            let result = paths.load_backdrop(&source, &entry).and_then(|bytes| {
+                let img = cache.load(bytes);
+                if img.wait().is_ok() {
+                    Ok(img)
+                } else {
+                    Err("Could not decode backdrop image.".to_owned())
+                }
+            });
+            Message::BackdropLoaded(id, result)
+        });
     }
 
     fn inspect(&mut self, path: String, picked: bool) {
@@ -935,6 +1015,64 @@ impl App {
                 if self.toast.as_ref().is_some_and(|t| t.id == id) {
                     tx.animated();
                     self.toast = None;
+                }
+            }
+            Message::BackdropsReady(source, list) => {
+                if source == self.saved_source {
+                    self.backdrops = list;
+                    let wanted = std::env::var("PISTONPORT_SMOKE_BACKDROP")
+                        .ok()
+                        .filter(|v| !v.is_empty())
+                        .unwrap_or_else(|| {
+                            profile::read(&self.paths.profile.join("garage-backdrop.txt"))
+                        });
+                    if !wanted.is_empty() && wanted != "cover" {
+                        if let Some(pos) = self.backdrops.iter().position(|b| b.id == wanted) {
+                            self.apply_backdrop_index(pos + 1, false);
+                        }
+                    }
+                }
+            }
+            Message::CycleBackdrop(delta) => {
+                let total = self.backdrops.len() + 1;
+                if total > 1 {
+                    let next = if delta == 0 {
+                        // Deterministic-free shuffle using system clock nanos
+                        let nanos = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.subsec_nanos() as usize)
+                            .unwrap_or(1);
+                        let mut pick = nanos % total;
+                        if pick == self.backdrop_index {
+                            pick = (pick + 1) % total;
+                        }
+                        pick
+                    } else if delta > 0 {
+                        (self.backdrop_index + 1) % total
+                    } else {
+                        (self.backdrop_index + total - 1) % total
+                    };
+                    self.apply_backdrop_index(next, true);
+                }
+            }
+            Message::BackdropLoaded(id, result) => {
+                let matches_current = self.backdrop_index > 0
+                    && self
+                        .backdrops
+                        .get(self.backdrop_index - 1)
+                        .is_some_and(|b| b.id == id);
+                if matches_current {
+                    self.backdrop_loading = false;
+                    match result {
+                        Ok(image) => {
+                            if let Some(assets) = &mut self.assets {
+                                assets.cover = Some(image);
+                            }
+                        }
+                        Err(error) => {
+                            self.push_toast("Backdrop Error", Some(error), true, false);
+                        }
+                    }
                 }
             }
             Message::Gamepad(action) if !self.busy && self.page != Page::Welcome => {

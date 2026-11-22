@@ -11,6 +11,7 @@ path = "../src/bin/pistonport/main.rs"
 
 [dependencies]
 fs2 = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 rfd = "0.17"
 tempfile = "3"
 rune = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752", default-features = false, features = ["accessibility", "embedded-fonts", "tooling"] }

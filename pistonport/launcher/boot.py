@@ -4,6 +4,7 @@ import argparse
 from contextlib import ExitStack, nullcontext
 import ctypes
 import hashlib
+import io
 import json
 import msvcrt
 import os
@@ -839,6 +840,137 @@ def build_image(game, profile, package=None):
     return target
 
 
+BACKDROP_ZIP = "assets/ui/images/marquee/loadingscreens/loadingscreens.zip"
+BACKDROP_TBODY_SIZE = 1920 * 1080 * 4 + 256
+BACKDROP_SKIP = frozenset({
+    "ls_frontend",
+    "ls_hangtime",
+    "ls_logosplash",
+    "ls_logosplash_dolby",
+    "ls_logosplash_dolby_dts",
+})
+BACKDROP_LABELS = {
+    "ls_airtricks": "Air Tricks",
+    "ls_battlerace": "Battle Race",
+    "ls_battlerace_ad": "Battle Race Action",
+    "ls_bestlap": "Best Lap Challenge",
+    "ls_bestlap_info": "Lightning McQueen Ghost",
+    "ls_bosschick": "Chick Hicks",
+    "ls_bossfritter": "Miss Fritter",
+    "ls_bossjackson": "Jackson Storm",
+    "ls_bossmater": "Mater the Greater",
+    "ls_certifications": "Lightning McQueen Turbo",
+    "ls_cupseries": "Piston Cup Series",
+    "ls_customevents": "Custom Events",
+    "ls_drifting": "Drifting",
+    "ls_earningturbo": "Earning Turbo",
+    "ls_individualevents": "Ramone",
+    "ls_inthezone": "In The Zone",
+    "ls_intro": "Starting Lineup",
+    "ls_jumping": "Cruz Ramirez Jump",
+    "ls_playground": "Thomasville Playground",
+    "ls_race": "Mater & Dr. Damage",
+    "ls_race_ad": "Cruz & Storm",
+    "ls_railgrinding": "Rail Grinding",
+    "ls_rearview": "Mack & Smokey",
+    "ls_sidebash": "River Scott & Louise Nash",
+    "ls_sidebashing": "Side-Bashing",
+    "ls_sponsoredteamevent": "Team Event",
+    "ls_stuntdriving": "Stunt Driving",
+    "ls_stuntshowcase": "Stunt Showcase",
+    "ls_stuntshowcase_ad": "Stunt Showcase Launch",
+    "ls_takedown": "Takedown",
+    "ls_takedown_ad": "Takedown Wave",
+    "ls_towandthrow": "Tow and Throw",
+    "ls_trackstrips": "Boost Strips",
+    "ls_usingturbo": "Using Turbo",
+    "ls_weapons": "Weapons",
+}
+
+
+class _PkgSeekStream(io.RawIOBase):
+    def __init__(self, package, name):
+        self.package = package
+        self.node, info = package.lookup(name)
+        if info.directory:
+            raise ValueError(f"{name} is a directory.")
+        self.length = info.length
+        self.pos = 0
+
+    def seekable(self):
+        return True
+
+    def readable(self):
+        return True
+
+    def seek(self, offset, whence=io.SEEK_SET):
+        if whence == io.SEEK_SET:
+            self.pos = offset
+        elif whence == io.SEEK_CUR:
+            self.pos += offset
+        elif whence == io.SEEK_END:
+            self.pos = self.length + offset
+        self.pos = max(0, min(self.pos, self.length))
+        return self.pos
+
+    def tell(self):
+        return self.pos
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            size = self.length - self.pos
+        size = min(size, self.length - self.pos)
+        if size <= 0:
+            return b""
+        buf = ctypes.create_string_buffer(size)
+        got = self.package.lib.pp_read(self.package.handle, self.node, self.pos, buf, size)
+        if got <= 0:
+            return b""
+        self.pos += got
+        return buf.raw[:got]
+
+
+def _open_backdrops_zip(game, resources):
+    if game.is_file() and game.suffix.lower() == ".pkg":
+        package = resources.enter_context(Package(game, HOME / "bin/piston_pkg.dll"))
+        stream = _PkgSeekStream(package, BACKDROP_ZIP)
+        return resources.enter_context(zipfile.ZipFile(stream))
+    zp = game / BACKDROP_ZIP
+    if not zp.is_file():
+        raise ValueError(f"Loading screens archive not found at {BACKDROP_ZIP}.")
+    return resources.enter_context(zipfile.ZipFile(zp))
+
+
+def list_backdrops(game):
+    with ExitStack() as resources:
+        zf = _open_backdrops_zip(game, resources)
+        last_mtb = None
+        lines = []
+        for zi in zf.infolist():
+            if zi.filename.endswith(".mtb"):
+                last_mtb = zi.filename[:-4]
+            elif zi.filename.endswith(".tbody") and zi.file_size == BACKDROP_TBODY_SIZE and last_mtb:
+                if last_mtb not in BACKDROP_SKIP:
+                    label = BACKDROP_LABELS.get(last_mtb, last_mtb.removeprefix("ls_").replace("_", " ").title())
+                    lines.append(f"{last_mtb}\t{label}\t{zi.filename}\n")
+                last_mtb = None
+        sys.stdout.buffer.write("".join(lines).encode("utf-8"))
+    return 0
+
+
+def read_backdrop(game, tbody_path):
+    with ExitStack() as resources:
+        zf = _open_backdrops_zip(game, resources)
+        info = zf.getinfo(tbody_path)
+        if info.file_size != BACKDROP_TBODY_SIZE:
+            raise ValueError(f"Unexpected backdrop size for {tbody_path}.")
+        data = zf.read(info)
+        if not data.startswith(b"GNF "):
+            raise ValueError(f"Invalid GNF header in {tbody_path}.")
+        sys.stdout.buffer.write(data)
+    return 0
+
+
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--game", type=Path)
@@ -855,6 +987,8 @@ def main():
     action.add_argument("--crash-report", action="store_true")
     action.add_argument("--check-update", action="store_true")
     action.add_argument("--install-update", metavar="URL")
+    action.add_argument("--list-backdrops", action="store_true")
+    action.add_argument("--read-backdrop", metavar="TBODY")
     opt = args.parse_args()
     if opt.list_hardware:
         return inspect_hardware()
@@ -873,6 +1007,10 @@ def main():
         return 0
     if opt.game is None:
         args.error("--game is required")
+    if opt.list_backdrops:
+        return list_backdrops(opt.game.resolve())
+    if opt.read_backdrop:
+        return read_backdrop(opt.game.resolve(), opt.read_backdrop)
     if opt.inspect_source or opt.source_info:
         return inspect_source(opt.game.resolve(), opt.source_info)
     if opt.inspect_trophies:
