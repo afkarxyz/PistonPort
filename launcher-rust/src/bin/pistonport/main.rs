@@ -1036,7 +1036,7 @@ impl App {
                     && !self.busy
                     && !self.backdrop_loading
                 {
-                    let next = self.random_backdrop_index(self.backdrop_index);
+                    let next = (self.backdrop_index % self.backdrops.len()) + 1;
                     self.apply_backdrop_index(next);
                 } else {
                     self.schedule_backdrop_timer();
