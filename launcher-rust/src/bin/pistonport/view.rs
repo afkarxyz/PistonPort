@@ -17,8 +17,9 @@ use crate::trophy_data::{Tier, tier_color};
 use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab, ToastNotice};
 
 const ICON: &[u8] = include_bytes!("../../../../pistonport/launcher/pistonport.png");
-const DUALSHOCK_STICK: &[u8] = include_bytes!("../../../assets/pads/dualshock4/leftstick.png");
-const XBOX_STICK: &[u8] = include_bytes!("../../../assets/pads/xbox/leftstick.png");
+const DUALSHOCK_STICK: &[u8] =
+    include_bytes!("../../../assets/pads/icons/playstation/playstation_button_l3.png");
+const XBOX_STICK: &[u8] = include_bytes!("../../../assets/pads/icons/xbox/xbox_ls.png");
 
 macro_rules! pad_art {
     ($system:literal, $name:literal) => {
