@@ -9,12 +9,14 @@ import msvcrt
 import os
 import platform
 import re
+import shutil
 import struct
 import subprocess
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+import zipfile
 
 HOME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HOME / "tools"))
@@ -364,17 +366,26 @@ def resolve_runtime_env(values, base_env=None, *, ram_gib=None, adapters=None):
         env.setdefault("SPARTAN_DMEM_MB", str(dmem_mb))
     if dmem_mb > BASE_DMEM_MB or safe_mode or low_ram:
         env.setdefault("SPARTAN_GUEST_COMMIT_ON_MAP", "1")
+    # Disable SDL3's Windows GameInput backend globally (notorious for crashing on
+    # Windows 11 24H2/26H1 and ASUS ROG Ally embedded controllers).
+    env.setdefault("SDL_WINDOWS_GAMEINPUT", "0")
     if safe_mode:
         env.setdefault("SPARTAN_AMD_PATHS_OFF", "all")
         env.setdefault("SPARTAN_PIPELINE_BINARIES", "0")
-        # Avoid SDL3 WGI / RawInput / DirectInput joystick crashes on Windows 11 + AMD handhelds.
+        # Avoid SDL3 WGI / RawInput joystick crashes on Windows 11 + AMD handhelds.
         env.setdefault("SDL_JOYSTICK_WGI", "0")
         env.setdefault("SDL_JOYSTICK_RAWINPUT", "0")
-        env.setdefault("SDL_JOYSTICK_DIRECTINPUT", "0")
+        env.setdefault("SDL_JOYSTICK_ROG_CHAKRAM", "0")
         # On AMD handhelds (unified <=20 GiB RAM, e.g. ROG Ally Z1E) or explicit Safe mode,
-        # also disable HIDAPI so SDL3 uses pure XInput for the embedded controller.
+        # disable all SDL3 joystick backends so SDL3 never throws 0xE06D7363 on Windows 11
+        # embedded controllers; runtime_pad.c's direct xinput9_1_0.dll fallback handles input.
         if low_ram or compat_mode == "safe":
+            env.setdefault("SDL_XINPUT_ENABLED", "0")
             env.setdefault("SDL_JOYSTICK_HIDAPI", "0")
+            env.setdefault("SDL_JOYSTICK_DIRECTINPUT", "0")
+            env.setdefault("SDL_JOYSTICK_THREAD", "1")
+        else:
+            env.setdefault("SDL_JOYSTICK_DIRECTINPUT", "0")
 
     options = {
         "fps_limit": rate,
@@ -494,20 +505,161 @@ def check_github_update(current_version="1.1.0", api_url=None):
     if not html_url.startswith("https://github.com/"):
         html_url = GITHUB_RELEASES_PAGE
     name = str(payload.get("name") or tag).strip().replace("\t", " ").replace("\n", " ")
+    asset_url = ""
+    assets = payload.get("assets")
+    if isinstance(assets, list):
+        preferred = None
+        fallback = None
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            aname = str(asset.get("name") or "").lower()
+            dl = str(asset.get("browser_download_url") or "").strip()
+            if not dl.startswith("https://github.com/afkarxyz/PistonPort/releases/download/"):
+                continue
+            if aname == "pistonport-windows-x64.zip":
+                preferred = dl
+                break
+            if aname.endswith(".zip") and fallback is None:
+                fallback = dl
+        asset_url = preferred or fallback or ""
     available = parse_version_tuple(tag) > parse_version_tuple(current_version)
     return {
         "available": available,
         "tag": tag,
         "url": html_url,
         "name": name,
+        "asset_url": asset_url,
     }
 
 
 def inspect_update(current_version):
     info = check_github_update(current_version)
-    line = f"UPDATE\t{int(info['available'])}\t{info['tag']}\t{info['url']}\t{info['name']}\n"
+    line = (
+        f"UPDATE\t{int(info['available'])}\t{info['tag']}\t"
+        f"{info['url']}\t{info['name']}\t{info['asset_url']}\n"
+    )
     sys.stdout.buffer.write(line.encode("utf-8"))
     return 0
+
+
+def _locate_update_payload(staged_dir):
+    """Find the directory containing PistonPort.exe and PistonPort.Runtime inside an extracted ZIP."""
+    if (staged_dir / "PistonPort.exe").is_file() and (staged_dir / "PistonPort.Runtime").is_dir():
+        return staged_dir
+    for child in staged_dir.iterdir():
+        if child.is_dir() and (child / "PistonPort.exe").is_file() and (child / "PistonPort.Runtime").is_dir():
+            return child
+    raise ValueError("Downloaded update archive does not contain PistonPort.exe and PistonPort.Runtime.")
+
+
+def _safe_extract_zip(zip_path, dest_dir):
+    dest_resolved = dest_dir.resolve()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.infolist():
+            target = (dest_resolved / member.filename).resolve()
+            if target != dest_resolved and dest_resolved not in target.parents:
+                raise ValueError(f"Unsafe path in update archive: {member.filename}")
+        zf.extractall(dest_resolved)
+
+
+def install_github_update(asset_url, install_dir, wait_pid=None, spawn_apply=True):
+    """Download, verify, stage, and schedule replacement of the PistonPort installation."""
+    url = str(asset_url or "").strip()
+    allow_local = os.environ.get("PISTONPORT_ALLOW_LOCAL_UPDATE") == "1"
+    valid_prefix = url.startswith("https://github.com/afkarxyz/PistonPort/releases/download/") or (
+        allow_local and url.startswith(("http://127.0.0.1:", "file://"))
+    )
+    if not valid_prefix:
+        raise ValueError("Refusing to download update from an untrusted URL.")
+
+    install_dir = Path(install_dir).resolve()
+    if not install_dir.is_dir():
+        raise ValueError(f"Install directory does not exist: {install_dir}")
+
+    work_dir = Path(tempfile.mkdtemp(prefix="pistonport-update-"))
+    zip_path = work_dir / "update.zip"
+    staged_dir = work_dir / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "PistonPort-Updater/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp, zip_path.open("wb") as out:
+            while True:
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise ValueError(f"Failed to download update: {error}") from error
+
+    try:
+        _safe_extract_zip(zip_path, staged_dir)
+        payload_dir = _locate_update_payload(staged_dir)
+    except (zipfile.BadZipFile, ValueError, OSError) as error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise ValueError(f"Invalid update archive: {error}") from error
+
+    zip_path.unlink(missing_ok=True)
+
+    def _ps_quote(value):
+        return "'" + str(value).replace("'", "''") + "'"
+
+    pid_val = int(wait_pid) if wait_pid else 0
+    script = work_dir / "apply_update.ps1"
+    script.write_text(
+        "\n".join([
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            f"$WaitPid = {pid_val}",
+            f"$PayloadDir = {_ps_quote(payload_dir)}",
+            f"$InstallDir = {_ps_quote(install_dir)}",
+            f"$WorkDir = {_ps_quote(work_dir)}",
+            "if ($WaitPid -gt 0) {",
+            "    for ($i = 0; $i -lt 80; $i++) {",
+            "        if (-not (Get-Process -Id $WaitPid -ErrorAction SilentlyContinue)) { break }",
+            "        Start-Sleep -Milliseconds 250",
+            "    }",
+            "}",
+            "Start-Sleep -Milliseconds 400",
+            "& robocopy $PayloadDir $InstallDir /E /IS /IT /R:8 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null",
+            "$exe = Join-Path $InstallDir 'PistonPort.exe'",
+            "if (Test-Path $exe) {",
+            "    Start-Process -FilePath $exe -WorkingDirectory $InstallDir",
+            "}",
+            "Start-Sleep -Seconds 1",
+            "Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+    if spawn_apply:
+        creation_flags = (
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-File",
+                str(script),
+            ],
+            cwd=str(work_dir.parent),
+            close_fds=True,
+            creationflags=creation_flags,
+        )
+    return work_dir, payload_dir, script
 
 
 def inspect_hardware():
@@ -540,6 +692,8 @@ def build_crash_report(profile):
         lines.append(ini_text)
     if log_path.is_file():
         log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if log_lines and log_lines[0].startswith("PistonPort launch:"):
+            lines.append(log_lines[0])
         crash = extract_crash_lines(log_lines, limit=16)
         if crash:
             lines.append("")
@@ -688,7 +842,9 @@ def main():
     args = argparse.ArgumentParser()
     args.add_argument("--game", type=Path)
     args.add_argument("--profile", type=Path)
-    args.add_argument("--current-version", default="1.1.0")
+    args.add_argument("--current-version", default="1.1.2")
+    args.add_argument("--install-dir", type=Path)
+    args.add_argument("--wait-pid", type=int)
     action = args.add_mutually_exclusive_group()
     action.add_argument("--prepare-only", action="store_true")
     action.add_argument("--inspect-source", action="store_true")
@@ -697,11 +853,17 @@ def main():
     action.add_argument("--list-hardware", action="store_true")
     action.add_argument("--crash-report", action="store_true")
     action.add_argument("--check-update", action="store_true")
+    action.add_argument("--install-update", metavar="URL")
     opt = args.parse_args()
     if opt.list_hardware:
         return inspect_hardware()
     if opt.check_update:
         return inspect_update(opt.current_version)
+    if opt.install_update:
+        if opt.install_dir is None:
+            args.error("--install-dir is required for --install-update")
+        install_github_update(opt.install_update, opt.install_dir, wait_pid=opt.wait_pid)
+        return 0
     if opt.crash_report:
         if opt.profile is None:
             args.error("--profile is required for --crash-report")
@@ -789,7 +951,12 @@ def main():
                 f"gpu={options['gpu_id']} "
                 f"compat={options['compat_mode']}({'safe' if options['safe_mode'] else 'standard'}) "
                 f"dmem={options['dmem_mb']}MiB "
-                f"commit_on_map={env.get('SPARTAN_GUEST_COMMIT_ON_MAP', '0')}\n"
+                f"commit_on_map={env.get('SPARTAN_GUEST_COMMIT_ON_MAP', '0')} "
+                f"sdl_gi={env.get('SDL_WINDOWS_GAMEINPUT', '1')} "
+                f"sdl_xi={env.get('SDL_XINPUT_ENABLED', '1')} "
+                f"sdl_di={env.get('SDL_JOYSTICK_DIRECTINPUT', '1')} "
+                f"sdl_hid={env.get('SDL_JOYSTICK_HIDAPI', '1')} "
+                f"sdl_thr={env.get('SDL_JOYSTICK_THREAD', '0')}\n"
             )
             stream.write(summary.encode("utf-8"))
             stream.flush()
@@ -800,6 +967,10 @@ def main():
                 stream.write(f"Trophy metadata unavailable: {error}\n".encode("utf-8"))
                 stream.flush()
             result = subprocess.run(cmd, env=env, cwd=profile, stdout=stream, stderr=subprocess.STDOUT)
+            if result.returncode:
+                rc_hex = f"0x{result.returncode & 0xFFFFFFFF:08X}"
+                stream.write(f"PistonPort exit code: {result.returncode} ({rc_hex})\n".encode("utf-8"))
+                stream.flush()
         restore_launcher_keys(config, preserved)
         if result.returncode:
             with log.open(errors="replace") as stream:

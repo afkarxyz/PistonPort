@@ -280,10 +280,13 @@ class BootHelpersTest(unittest.TestCase):
             adapters=["AMD Radeon Graphics"],
             ram_gib=9.7,
         )
+        self.assertEqual(env.get("SDL_WINDOWS_GAMEINPUT"), "0")
         self.assertEqual(env.get("SDL_JOYSTICK_WGI"), "0")
         self.assertEqual(env.get("SDL_JOYSTICK_RAWINPUT"), "0")
-        self.assertEqual(env.get("SDL_JOYSTICK_DIRECTINPUT"), "0")
+        self.assertEqual(env.get("SDL_XINPUT_ENABLED"), "0")
         self.assertEqual(env.get("SDL_JOYSTICK_HIDAPI"), "0")
+        self.assertEqual(env.get("SDL_JOYSTICK_DIRECTINPUT"), "0")
+        self.assertEqual(env.get("SDL_JOYSTICK_THREAD"), "1")
 
         # AMD desktop (32 GiB RAM, auto): keeps HIDAPI enabled for DualSense/DS4
         env_desktop, _ = boot.resolve_runtime_env(
@@ -294,6 +297,40 @@ class BootHelpersTest(unittest.TestCase):
         )
         self.assertEqual(env_desktop.get("SDL_JOYSTICK_WGI"), "0")
         self.assertNotIn("SDL_JOYSTICK_HIDAPI", env_desktop)
+
+    def test_install_github_update_stages_nested_zip_and_rejects_untrusted_url(self):
+        import os, shutil, zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            install_dir = tmp_path / "install"
+            install_dir.mkdir()
+            with self.assertRaises(ValueError):
+                boot.install_github_update("https://evil.example/update.zip", install_dir, spawn_apply=False)
+
+            zip_path = tmp_path / "release.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("PistonPort/PistonPort.exe", b"MZ-new")
+                zf.writestr("PistonPort/PistonPort.Runtime/tools/boot.py", b"# new")
+
+            old_allow = os.environ.get("PISTONPORT_ALLOW_LOCAL_UPDATE")
+            os.environ["PISTONPORT_ALLOW_LOCAL_UPDATE"] = "1"
+            try:
+                work_dir, payload_dir, script = boot.install_github_update(
+                    zip_path.as_uri(), install_dir, wait_pid=12345, spawn_apply=False
+                )
+                try:
+                    self.assertTrue((payload_dir / "PistonPort.exe").is_file())
+                    self.assertTrue((payload_dir / "PistonPort.Runtime/tools/boot.py").is_file())
+                    ps = script.read_text(encoding="utf-8")
+                    self.assertIn("$WaitPid = 12345", ps)
+                    self.assertIn("robocopy", ps)
+                finally:
+                    shutil.rmtree(work_dir, ignore_errors=True)
+            finally:
+                if old_allow is None:
+                    os.environ.pop("PISTONPORT_ALLOW_LOCAL_UPDATE", None)
+                else:
+                    os.environ["PISTONPORT_ALLOW_LOCAL_UPDATE"] = old_allow
 
 
 if __name__ == "__main__":

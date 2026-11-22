@@ -1969,6 +1969,56 @@ KeyboardHint keyboard_hints[] = {
 constexpr float kKeyboardHintIconWidth = 1.8f;
 constexpr float kKeyboardHintIconHeight = 1.18f;
 
+void DownsampleIconArea(const SpartanPng::Image& src, int max_dim, std::vector<unsigned char>& dst_rgba,
+                        int& dst_w, int& dst_h) {
+    const int sw = src.width, sh = src.height;
+    if (sw <= max_dim && sh <= max_dim) {
+        dst_w = sw;
+        dst_h = sh;
+        dst_rgba = src.rgba;
+        return;
+    }
+    const float ratio = float(max_dim) / float(std::max(sw, sh));
+    dst_w = std::max(1, int(std::lround(sw * ratio)));
+    dst_h = std::max(1, int(std::lround(sh * ratio)));
+    dst_rgba.assign(size_t(dst_w) * size_t(dst_h) * 4, 0);
+    const float sx_scale = float(sw) / float(dst_w);
+    const float sy_scale = float(sh) / float(dst_h);
+    for (int y = 0; y < dst_h; ++y) {
+        const float y0 = y * sy_scale, y1 = (y + 1) * sy_scale;
+        const int iy0 = std::max(0, int(std::floor(y0)));
+        const int iy1 = std::min(sh, int(std::ceil(y1)));
+        for (int x = 0; x < dst_w; ++x) {
+            const float x0 = x * sx_scale, x1 = (x + 1) * sx_scale;
+            const int ix0 = std::max(0, int(std::floor(x0)));
+            const int ix1 = std::min(sw, int(std::ceil(x1)));
+            float pr = 0.0f, pg = 0.0f, pb = 0.0f, pa = 0.0f, wsum = 0.0f;
+            for (int sy = iy0; sy < iy1; ++sy) {
+                const float wy = std::min(float(sy + 1), y1) - std::max(float(sy), y0);
+                for (int sx = ix0; sx < ix1; ++sx) {
+                    const float wx = std::min(float(sx + 1), x1) - std::max(float(sx), x0);
+                    const float w = wx * wy;
+                    const size_t idx = (size_t(sy) * size_t(sw) + size_t(sx)) * 4;
+                    const float a = src.rgba[idx + 3] / 255.0f;
+                    pr += (src.rgba[idx + 0] / 255.0f) * a * w;
+                    pg += (src.rgba[idx + 1] / 255.0f) * a * w;
+                    pb += (src.rgba[idx + 2] / 255.0f) * a * w;
+                    pa += a * w;
+                    wsum += w;
+                }
+            }
+            const size_t out = (size_t(y) * size_t(dst_w) + size_t(x)) * 4;
+            if (wsum > 0.0f && pa > 1e-5f) {
+                const float alpha = std::clamp(pa / wsum, 0.0f, 1.0f);
+                dst_rgba[out + 0] = (unsigned char)std::lround(std::clamp(pr / pa, 0.0f, 1.0f) * 255.0f);
+                dst_rgba[out + 1] = (unsigned char)std::lround(std::clamp(pg / pa, 0.0f, 1.0f) * 255.0f);
+                dst_rgba[out + 2] = (unsigned char)std::lround(std::clamp(pb / pa, 0.0f, 1.0f) * 255.0f);
+                dst_rgba[out + 3] = (unsigned char)std::lround(alpha * 255.0f);
+            }
+        }
+    }
+}
+
 void LoadKeyboardHintTextures() {
     static bool loaded = false;
     if (loaded) {
@@ -1980,8 +2030,11 @@ void LoadKeyboardHintTextures() {
         if (!SpartanPng::DecodeRgba(hint.png.data(), hint.png.size(), icon)) {
             continue;
         }
-        hint.texture.Create(ImTextureFormat_RGBA32, icon.width, icon.height);
-        std::memcpy(hint.texture.GetPixels(), icon.rgba.data(), icon.rgba.size());
+        std::vector<unsigned char> smooth;
+        int w = 0, h = 0;
+        DownsampleIconArea(icon, 32, smooth, w, h);
+        hint.texture.Create(ImTextureFormat_RGBA32, w, h);
+        std::memcpy(hint.texture.GetPixels(), smooth.data(), smooth.size());
         ImGui::RegisterUserTexture(&hint.texture);
     }
 }

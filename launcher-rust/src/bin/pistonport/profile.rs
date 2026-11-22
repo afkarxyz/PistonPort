@@ -142,12 +142,13 @@ impl Paths {
             .lines()
             .find(|l| l.starts_with("UPDATE\t"))
             .ok_or_else(|| "Unexpected update response from runtime.".to_owned())?;
-        let mut parts = line.splitn(5, '\t');
+        let mut parts = line.splitn(6, '\t');
         let _ = parts.next();
         let available = parts.next() == Some("1");
         let tag = parts.next().unwrap_or_default().trim().to_owned();
         let url = parts.next().unwrap_or_default().trim().to_owned();
         let title = parts.next().unwrap_or(&tag).trim().to_owned();
+        let asset_url = parts.next().unwrap_or_default().trim().to_owned();
         if tag.is_empty() {
             return Err("Missing release tag from GitHub Releases.".into());
         }
@@ -156,7 +157,27 @@ impl Paths {
             tag,
             url,
             title,
+            asset_url,
         })
+    }
+
+    pub fn install_update(&self, asset_url: &str) -> Result<(), String> {
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("Could not locate PistonPort.exe: {e}"))?;
+        let install_dir = exe
+            .parent()
+            .ok_or_else(|| "Could not determine PistonPort install folder.".to_owned())?;
+        let pid = std::process::id().to_string();
+        let mut command = self.python("boot.py");
+        command
+            .arg("--install-update")
+            .arg(asset_url)
+            .arg("--install-dir")
+            .arg(install_dir)
+            .arg("--wait-pid")
+            .arg(pid);
+        run(command)?;
+        Ok(())
     }
 
     pub fn open_log(&self) -> Result<(), String> {
@@ -316,6 +337,7 @@ pub struct UpdateInfo {
     pub tag: String,
     pub url: String,
     pub title: String,
+    pub asset_url: String,
 }
 
 pub fn open_url(url: &str) -> Result<(), String> {

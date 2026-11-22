@@ -11,8 +11,7 @@ use rune_kit::{
 
 use crate::icons;
 use crate::profile::{
-    ANISOTROPIES, COMPAT_MODES, FOV_SCALES, GLYPH_STYLES, MODES, Preset, RATES, SHADOW_SIZES,
-    SIZES, Slot,
+    ANISOTROPIES, COMPAT_MODES, FOV_SCALES, MODES, Preset, RATES, SHADOW_SIZES, SIZES, Slot,
 };
 use crate::trophy_data::{Tier, tier_color};
 use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab};
@@ -217,12 +216,18 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         && update.available
     {
         let url = update.url.clone();
-        let pill = Button::new(format!("Update {}", update.tag))
+        let asset_url = update.asset_url.clone();
+        let pill = Button::new(if app.installing_update {
+            "Updating…".to_owned()
+        } else {
+            format!("Update {}", update.tag)
+        })
             .icon(&icons::UPLOAD)
             .variant(ButtonVariant::Contrast)
+            .disabled(app.installing_update)
             .on_press_tx(move |app: &mut App, tx| {
                 if app.page == Page::Settings && app.settings_tab == SettingsTab::System {
-                    app.update(Message::OpenUpdateUrl(url.clone()), tx);
+                    app.update(Message::InstallUpdate(asset_url.clone(), url.clone()), tx);
                 } else {
                     app.page = Page::Settings;
                     app.settings_tab = SettingsTab::System;
@@ -939,14 +944,6 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 overlays,
                 Message::Fov,
             );
-            let glyph_style = field(
-                "glyph-style",
-                "Button Prompts",
-                cfg.glyph_style.1,
-                GLYPH_STYLES.iter().map(|c| (*c, c.1.into())).collect(),
-                overlays,
-                Message::GlyphStyle,
-            );
             let vibration = selection(
                 "vibration",
                 "Controller Vibration",
@@ -1026,7 +1023,6 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .min_w(0.0)
                 .gap(6.0)
                 .child(medium(kit, "Controller & Audio"))
-                .child(setting_row(kit, "Button Prompts", glyph_style))
                 .child(setting_row(kit, "Controller Vibration", vibration))
                 .child(setting_row(kit, "Master Volume", volume));
             row()
@@ -1074,7 +1070,14 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                         .child(source_actions(app, kit)),
                 );
 
-            let (update_title, update_detail, download_url) = if app.checking_update {
+            let (update_title, update_detail, download_target) = if app.installing_update {
+                (
+                    "Downloading & Installing Update…".to_owned(),
+                    "PistonPort will close, extract the new version, and restart automatically."
+                        .to_owned(),
+                    None,
+                )
+            } else if app.checking_update {
                 (
                     "Checking GitHub Releases…".to_owned(),
                     format!("Installed version: v{}", env!("CARGO_PKG_VERSION")),
@@ -1089,7 +1092,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                             info.title,
                             env!("CARGO_PKG_VERSION")
                         ),
-                        Some(info.url.clone()),
+                        Some((info.asset_url.clone(), info.url.clone())),
                     ),
                     Some(Ok(info)) => (
                         format!("PistonPort is Up to Date (v{})", env!("CARGO_PKG_VERSION")),
@@ -1109,13 +1112,14 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 }
             };
             let mut update_actions = row().gap(8.0).center_y();
-            if let Some(url) = download_url {
+            if let Some((asset_url, fallback_url)) = download_target {
                 update_actions = update_actions.child(action(
                     kit,
                     "download-update",
-                    "Download Release",
+                    "Update Now",
                     &icons::UPLOAD,
-                    Some(Message::OpenUpdateUrl(url)),
+                    (!app.busy && !app.installing_update)
+                        .then_some(Message::InstallUpdate(asset_url, fallback_url)),
                     ButtonVariant::Contrast,
                 ));
             }
@@ -1128,7 +1132,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                     "Check for Updates"
                 },
                 &icons::RESET,
-                (!app.checking_update).then_some(Message::CheckUpdate),
+                (!app.checking_update && !app.installing_update).then_some(Message::CheckUpdate),
                 ButtonVariant::Neutral,
             ));
             let update_card = row()

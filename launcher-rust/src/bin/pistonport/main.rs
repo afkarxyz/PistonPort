@@ -70,7 +70,8 @@ enum Message {
     HardwareLoaded(HardwareInfo),
     CheckUpdate,
     UpdateChecked(Result<UpdateInfo, String>, bool),
-    OpenUpdateUrl(String),
+    InstallUpdate(String, String),
+    UpdateInstalled(Result<(), String>),
     OpenCoffee,
     Preset(Preset),
     Mode(Choice),
@@ -87,7 +88,6 @@ enum Message {
     RcasStrength(u16),
     AsyncShaders(bool),
     Vibration(u16),
-    GlyphStyle(Choice),
     Gpu(String),
     Monitor(String),
     Compat(Choice),
@@ -156,6 +156,7 @@ struct App {
     hardware: HardwareInfo,
     update_info: Option<Result<UpdateInfo, String>>,
     checking_update: bool,
+    installing_update: bool,
     playing_flag: Arc<AtomicBool>,
     source: TextEdit,
     saved_source: String,
@@ -196,6 +197,7 @@ impl App {
             hardware: HardwareInfo::default(),
             update_info: None,
             checking_update: false,
+            installing_update: false,
             playing_flag: Arc::new(AtomicBool::new(false)),
             pad: load_bindings(&paths.profile.join("controller.map")),
             page: Page::Welcome,
@@ -593,12 +595,41 @@ impl App {
                 }
                 self.update_info = Some(result);
             }
-            Message::OpenUpdateUrl(url) => {
-                if let Err(error) = profile::open_url(&url) {
-                    tx.animated();
-                    self.push_toast("Could Not Open Browser", Some(error), true, false);
-                } else {
-                    self.report("Opened GitHub Release Page", false);
+            Message::InstallUpdate(asset_url, fallback_url) if !self.busy && !self.installing_update => {
+                if asset_url.is_empty() {
+                    if let Err(error) = profile::open_url(&fallback_url) {
+                        tx.animated();
+                        self.push_toast("Could Not Open Browser", Some(error), true, false);
+                    } else {
+                        self.report("Opened GitHub Release Page", false);
+                    }
+                    return;
+                }
+                self.installing_update = true;
+                self.busy = true;
+                tx.animated();
+                self.report("Downloading Update…", false);
+                self.push_toast(
+                    "Downloading Update…",
+                    Some("PistonPort will close, extract the new version, and restart automatically.".into()),
+                    false,
+                    false,
+                );
+                let paths = self.paths.clone();
+                self.background(move || Message::UpdateInstalled(paths.install_update(&asset_url)));
+            }
+            Message::UpdateInstalled(result) => {
+                self.installing_update = false;
+                self.busy = false;
+                match result {
+                    Ok(()) => {
+                        std::process::exit(0);
+                    }
+                    Err(error) => {
+                        tx.animated();
+                        self.report("Update Failed", true);
+                        self.push_toast("Update Failed", Some(error), true, false);
+                    }
                 }
             }
             Message::OpenCoffee => {
@@ -673,10 +704,6 @@ impl App {
             }
             Message::Vibration(value) if !self.busy => {
                 self.settings.vibration = value;
-                self.dirty();
-            }
-            Message::GlyphStyle(value) if !self.busy => {
-                self.settings.glyph_style = value;
                 self.dirty();
             }
             Message::Gpu(value) if !self.busy => {

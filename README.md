@@ -2,7 +2,7 @@
 
 An unofficial native Windows x64 port of *Cars 3: Driven to Win* (PS4).
 
-[**Download for Windows (v1.1.1)**](https://github.com/afkarxyz/PistonPort/releases/download/v1.1.1/PistonPort-Windows-x64.zip)
+[**Download for Windows (Latest)**](https://github.com/afkarxyz/PistonPort/releases/latest/download/PistonPort-Windows-x64.zip)
 
 ![PistonPort launcher showing the Garage](docs/images/pistonport/PistonPort-Launcher.png)
 

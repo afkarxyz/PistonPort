@@ -26,6 +26,9 @@
 #include <math.h>
 #include <SDL3/SDL.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
 #define ERR_INVALID_HANDLE ((int32_t)0x80920003)
@@ -211,6 +214,89 @@ static bool pad_source_down(SDL_Gamepad *g, int source) {
     if (source==PAD_RIGHT_TRIGGER) return trigger(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER))>TRIGGER_DOWN;
     return SDL_GetGamepadButton(g,(SDL_GamepadButton)source);
 }
+
+#ifdef _WIN32
+/* Direct Win32 xinput9_1_0.dll fallback for Windows 11 handhelds (e.g. ASUS ROG Ally Z1E) where
+ * SDL3's XInput/WinRT backends throw 0xE06D7363 when opening the embedded controller. */
+typedef struct {
+    uint16_t buttons;
+    uint8_t left_trigger;
+    uint8_t right_trigger;
+    int16_t thumb_lx;
+    int16_t thumb_ly;
+    int16_t thumb_rx;
+    int16_t thumb_ry;
+} WinXInputGamepad;
+typedef struct {
+    uint32_t packet_number;
+    WinXInputGamepad gamepad;
+} WinXInputState;
+typedef struct {
+    uint16_t left_motor;
+    uint16_t right_motor;
+} WinXInputVibration;
+typedef uint32_t (WINAPI *WinXInputGetStateFn)(uint32_t user_index, WinXInputState *state);
+typedef uint32_t (WINAPI *WinXInputSetStateFn)(uint32_t user_index, WinXInputVibration *vib);
+
+static int win_xinput_ready;
+static WinXInputGetStateFn win_xinput_get_state;
+static WinXInputSetStateFn win_xinput_set_state;
+static int win_xinput_slot = -1;
+
+static void win_xinput_init(void) {
+    if (win_xinput_ready) return;
+    win_xinput_ready = 1;
+    HMODULE mod = LoadLibraryA("xinput9_1_0.dll");
+    if (!mod) mod = LoadLibraryA("xinput1_3.dll");
+    if (!mod) return;
+    win_xinput_get_state = (WinXInputGetStateFn)(void *)GetProcAddress(mod, "XInputGetState");
+    win_xinput_set_state = (WinXInputSetStateFn)(void *)GetProcAddress(mod, "XInputSetState");
+}
+
+static bool win_xinput_poll(WinXInputState *out) {
+    win_xinput_init();
+    if (!win_xinput_get_state) return false;
+    if (win_xinput_slot >= 0) {
+        if (win_xinput_get_state((uint32_t)win_xinput_slot, out) == 0) return true;
+        win_xinput_slot = -1;
+    }
+    for (uint32_t i = 0; i < 4; ++i) {
+        if (win_xinput_get_state(i, out) == 0) {
+            win_xinput_slot = (int)i;
+            ++connected_count;
+            printf("Runtime: gamepad connected: XInput Controller (slot %u)\n", i);
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool win_xinput_source_down(const WinXInputGamepad *xg, int source) {
+    if (source == PAD_LEFT_TRIGGER) return xg->left_trigger > TRIGGER_DOWN;
+    if (source == PAD_RIGHT_TRIGGER) return xg->right_trigger > TRIGGER_DOWN;
+    switch ((SDL_GamepadButton)source) {
+    case SDL_GAMEPAD_BUTTON_SOUTH:          return (xg->buttons & 0x1000) != 0; /* A */
+    case SDL_GAMEPAD_BUTTON_EAST:           return (xg->buttons & 0x2000) != 0; /* B */
+    case SDL_GAMEPAD_BUTTON_WEST:           return (xg->buttons & 0x4000) != 0; /* X */
+    case SDL_GAMEPAD_BUTTON_NORTH:          return (xg->buttons & 0x8000) != 0; /* Y */
+    case SDL_GAMEPAD_BUTTON_BACK:           return (xg->buttons & 0x0020) != 0;
+    case SDL_GAMEPAD_BUTTON_START:          return (xg->buttons & 0x0010) != 0;
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK:     return (xg->buttons & 0x0040) != 0;
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK:    return (xg->buttons & 0x0080) != 0;
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  return (xg->buttons & 0x0100) != 0;
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return (xg->buttons & 0x0200) != 0;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP:        return (xg->buttons & 0x0001) != 0;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:      return (xg->buttons & 0x0002) != 0;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:      return (xg->buttons & 0x0004) != 0;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:     return (xg->buttons & 0x0008) != 0;
+    default: return false;
+    }
+}
+
+static int16_t win_xinput_neg_y(int16_t y) {
+    return y == -32768 ? 32767 : (int16_t)(-y);
+}
+#endif
 
 /* SPARTAN_DEADZONE_LEFT and SPARTAN_DEADZONE_RIGHT: the stick's radial dead zone in percent, 0 (the
  * default) leaves it as read. Past the zone the stick is rescaled, so it still starts from zero. */
@@ -895,6 +981,28 @@ static void sample_host(PadData *d) {
         }
         update_dualsense(g,d);
     }
+#ifdef _WIN32
+    else {
+        WinXInputState xi;
+        if (win_xinput_poll(&xi)) {
+            const WinXInputGamepad *xg=&xi.gamepad;
+            for (size_t i=0;i<pad_map.count;++i)
+                if (win_xinput_source_down(xg,pad_map.entries[i].source)) d->buttons|=pad_map.entries[i].ps;
+            const uint32_t mapped=d->buttons;
+            pad_held=mapped;
+            d->left_x=axis(xg->thumb_lx); d->left_y=axis(win_xinput_neg_y(xg->thumb_ly));
+            d->right_x=axis(xg->thumb_rx); d->right_y=axis(win_xinput_neg_y(xg->thumb_ry));
+            apply_deadzone(&d->left_x,&d->left_y,stick_deadzone[0]);
+            apply_deadzone(&d->right_x,&d->right_y,stick_deadzone[1]);
+            if (!trigger_mapped[0]) d->l2=xg->left_trigger;
+            if (!trigger_mapped[1]) d->r2=xg->right_trigger;
+            if (d->l2>TRIGGER_DOWN) d->buttons|=BTN_L2;
+            if (d->r2>TRIGGER_DOWN) d->buttons|=BTN_R2;
+            if (mapped & BTN_L2) d->l2=255;
+            if (mapped & BTN_R2) d->r2=255;
+        }
+    }
+#endif
     /* The keyboard works with or without a gamepad: its buttons add to the pad's, and a stick
      * follows the keys only while one of them is held. */
     if (!k) return;
@@ -1508,6 +1616,15 @@ static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
     /* The menu's vibration strength scales the game's motors (0: off). */
     const unsigned percent=(unsigned)spartanportgpu_vibration_percent();
     if (g) SDL_RumbleGamepad(g,(uint16_t)(param[0]*257u*percent/100u),(uint16_t)(param[1]*257u*percent/100u),1000);
+#ifdef _WIN32
+    else if (win_xinput_set_state && win_xinput_slot >= 0) {
+        WinXInputVibration v={
+            .left_motor=(uint16_t)(param[1]*257u*percent/100u),
+            .right_motor=(uint16_t)(param[0]*257u*percent/100u),
+        };
+        win_xinput_set_state((uint32_t)win_xinput_slot, &v);
+    }
+#endif
     pthread_mutex_unlock(&lock);
     return 0;
 }

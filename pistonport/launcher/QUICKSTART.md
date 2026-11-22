@@ -23,7 +23,7 @@ Choose **Events → Race → Fireball Beach Sprint** after the tutorial. **F** a
 * **High-FPS Motion Blur & Bloom**: **Motion Blur** is Off by default for crisp high-FPS racing (turning it On uses the fixed shutter scale without 120 FPS over-blur). If you see bloom/glow artifacts on moving cars, toggle **Bloom** to **Off**.
 * **FSR 1 + RCAS & Async Shaders**: Found under **Settings → Upscaling & Hardware**; recommended for handhelds rendering at `720p`/`900p` on a `1080p` display.
 * **ROG Ally / AMD Handhelds**: Leave **GPU Compatibility** on **Auto** (or pick **Safe (AMD / Handheld)**). You can also launch straight into the game from Steam Big Picture / Playnite / Armoury Crate SE with `PistonPort.exe --play`.
-* **Controller & Audio**: Under **Settings → Gameplay & Audio**, configure **Button Prompts** (Auto / PlayStation / Xbox / Nintendo / Keyboard), **Controller Vibration** (`0%`–`100%`), **Master Volume**, and **Show Keyboard Hints**.
+* **Controller & Audio**: Under **Settings → Gameplay & Audio**, configure **Controller Vibration** (`0%`–`100%`), **Master Volume**, and **Show Keyboard Hints**.
 * **Troubleshooting**: Click **Open Log** or **Copy Report** in **Settings → Source & Updates** (or **Copy Crash Report** in the toast notification if the game exits unexpectedly) to grab your system info and `native-last.log`.
 
 Frame limits are **30, 60, 100, 120, 144, 180, 240**, and **Unlimited**. The default is 60. To measure maximum throughput, select Unlimited and turn off VSync. **Show Frame Rate** displays the counter in-game.
