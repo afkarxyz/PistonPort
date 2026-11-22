@@ -401,6 +401,7 @@ pub const MODES: &[Choice] = &[
     Choice("fullscreen", "Fullscreen"),
 ];
 pub const SIZES: &[Choice] = &[
+    Choice("540p", "960 × 540 (Performance)"),
     Choice("720p", "1280 × 720"),
     Choice("1280x800", "1280 × 800 (16:10)"),
     Choice("900p", "1600 × 900"),
@@ -413,6 +414,7 @@ pub const SIZES: &[Choice] = &[
     Choice("4K", "3840 × 2160"),
 ];
 pub const SHADOW_SIZES: &[Choice] = &[
+    Choice("512", "Very Low (512)"),
     Choice("1024", "Low (1024)"),
     Choice("2048", "Default (2048)"),
     Choice("3072", "High (3072)"),
@@ -518,7 +520,7 @@ impl Default for Settings {
         Self {
             mode: MODES[0],
             size: "native".into(),
-            shadow: SHADOW_SIZES[1],
+            shadow: SHADOW_SIZES[2],
             anisotropy: ANISOTROPIES[4],
             motion_blur: false,
             bloom: true,
@@ -550,42 +552,32 @@ impl Settings {
                 self.mode = MODES[1];
                 self.size = "720p".into();
                 self.shadow = SHADOW_SIZES[0];
-                self.anisotropy = ANISOTROPIES[3];
+                self.anisotropy = ANISOTROPIES[2];
                 self.rate = RATES[1];
                 self.fsr1 = true;
                 self.rcas = true;
                 self.rcas_strength = 75;
                 self.async_shaders = true;
                 self.motion_blur = false;
+                self.bloom = false;
                 self.high_lod = false;
-                self.compat = COMPAT_MODES[1];
+                self.compat = COMPAT_MODES[0];
             }
             Preset::Balanced => {
                 self.size = "native".into();
-                self.shadow = SHADOW_SIZES[1];
+                self.shadow = SHADOW_SIZES[2];
                 self.anisotropy = ANISOTROPIES[4];
                 self.rate = RATES[1];
                 self.fsr1 = false;
                 self.rcas = false;
                 self.async_shaders = true;
                 self.motion_blur = false;
+                self.bloom = true;
                 self.high_lod = false;
                 self.compat = COMPAT_MODES[0];
             }
             Preset::HighRefresh => {
                 self.size = "1440p".into();
-                self.shadow = SHADOW_SIZES[2];
-                self.anisotropy = ANISOTROPIES[4];
-                self.rate = RATES[3];
-                self.fsr1 = false;
-                self.rcas = false;
-                self.async_shaders = true;
-                self.motion_blur = false;
-                self.high_lod = true;
-                self.compat = COMPAT_MODES[0];
-            }
-            Preset::Ultra => {
-                self.size = "4K".into();
                 self.shadow = SHADOW_SIZES[3];
                 self.anisotropy = ANISOTROPIES[4];
                 self.rate = RATES[3];
@@ -593,6 +585,20 @@ impl Settings {
                 self.rcas = false;
                 self.async_shaders = true;
                 self.motion_blur = false;
+                self.bloom = true;
+                self.high_lod = true;
+                self.compat = COMPAT_MODES[0];
+            }
+            Preset::Ultra => {
+                self.size = "4K".into();
+                self.shadow = SHADOW_SIZES[4];
+                self.anisotropy = ANISOTROPIES[4];
+                self.rate = RATES[3];
+                self.fsr1 = false;
+                self.rcas = false;
+                self.async_shaders = true;
+                self.motion_blur = false;
+                self.bloom = true;
                 self.high_lod = true;
                 self.compat = COMPAT_MODES[0];
             }
@@ -606,7 +612,7 @@ impl Settings {
                 "display_mode" => settings.mode = find_choice(MODES, value, MODES[0]),
                 "render_resolution" => settings.size = value.to_owned(),
                 "shadow_resolution" => {
-                    settings.shadow = find_choice(SHADOW_SIZES, value, SHADOW_SIZES[1])
+                    settings.shadow = find_choice(SHADOW_SIZES, value, SHADOW_SIZES[2])
                 }
                 "anisotropy" => {
                     settings.anisotropy = find_choice(ANISOTROPIES, value, ANISOTROPIES[4])
@@ -737,9 +743,11 @@ mod tests {
         let mut custom = defaults.clone();
         custom.apply_preset(Preset::Handheld);
         assert_eq!(custom.size, "720p");
+        assert_eq!(custom.shadow.0, "512");
+        assert!(!custom.bloom);
         assert!(custom.fsr1);
         assert!(custom.rcas);
-        assert_eq!(custom.compat.0, "safe");
+        assert_eq!(custom.compat.0, "auto");
 
         custom.mode = MODES[1];
         custom.size = "3440x1440".into();

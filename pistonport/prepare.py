@@ -11,6 +11,7 @@ from pathlib import Path
 
 TARGET_HASH = "56d27cc83b7fe34921fb07413dd7c8fb255daf357a3f81c2d882969f001ff654"
 RESOLUTIONS = {
+    "540p": (960, 540),
     "720p": (1280, 720),
     "1280x800": (1280, 800),
     "900p": (1600, 900),
@@ -23,6 +24,8 @@ RESOLUTIONS = {
     "4K": (3840, 2160),
 }
 _RESOLUTION_ALIASES = {
+    "540p": "540p",
+    "960x540": "540p",
     "720p": "720p",
     "1280x720": "720p",
     "1280x800": "1280x800",
@@ -42,7 +45,7 @@ _RESOLUTION_ALIASES = {
     "2160p": "4K",
     "3840x2160": "4K",
 }
-SHADOW_RESOLUTIONS = (1024, 2048, 3072, 4096)
+SHADOW_RESOLUTIONS = (512, 1024, 2048, 3072, 4096)
 FOV_SCALES = (100, 110, 120, 130)
 BASE_DMEM_MB = 5056
 # The toolkit and public NetCtl callbacks use the same PS4 calling convention.

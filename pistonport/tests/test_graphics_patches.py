@@ -178,15 +178,26 @@ class BootHelpersTest(unittest.TestCase):
             ram_gib=16.0,
             adapters=["AMD Radeon Graphics"],
         )
-        self.assertTrue(opts["safe_mode"])
-        self.assertEqual(env["SPARTAN_AMD_PATHS_OFF"], "all")
-        self.assertEqual(env["SPARTAN_PIPELINE_BINARIES"], "0")
+        self.assertFalse(opts["safe_mode"])
+        self.assertNotIn("SPARTAN_AMD_PATHS_OFF", env)
+        self.assertNotIn("SPARTAN_PIPELINE_BINARIES", env)
         self.assertEqual(env["SPARTAN_GUEST_COMMIT_ON_MAP"], "1")
         self.assertEqual(env["SPARTAN_FSR1"], "1")
         self.assertEqual(env["SPARTAN_RCAS"], "1")
         self.assertEqual(env["SPARTAN_ASYNC_SHADERS"], "1")
         self.assertEqual(env["SPARTAN_GLYPH_STYLE"], "xbox")
         self.assertEqual(env["SPARTAN_VIBRATION"], "70")
+
+        # Explicit Safe mode disables AMD paths and pipeline binary cache
+        env_safe, opts_safe = boot.resolve_runtime_env(
+            {"compat_mode": "safe"},
+            base_env={},
+            ram_gib=16.0,
+            adapters=["AMD Radeon Graphics"],
+        )
+        self.assertTrue(opts_safe["safe_mode"])
+        self.assertEqual(env_safe["SPARTAN_AMD_PATHS_OFF"], "all")
+        self.assertEqual(env_safe["SPARTAN_PIPELINE_BINARIES"], "0")
 
     def test_selected_gpu_and_ultrawide_dmem(self):
         env, opts = boot.resolve_runtime_env(
@@ -205,8 +216,9 @@ class BootHelpersTest(unittest.TestCase):
             ram_gib=32.0,
             adapters=["NVIDIA GeForce RTX 4070 SUPER", "AMD Radeon(TM) Graphics"],
         )
-        # User explicitly picked GPU #1 (AMD), so auto compat engages safe mode!
-        self.assertTrue(opts["safe_mode"])
+        # User picked GPU #1 (AMD) in Auto mode: keeps RDNA perf/pipeline cache on, enables commit-on-map.
+        self.assertFalse(opts["safe_mode"])
+        self.assertEqual(env["SPARTAN_GUEST_COMMIT_ON_MAP"], "1")
         self.assertEqual(env["SPARTAN_GPU_ID"], "1")
         self.assertEqual(env["SPARTAN_MONITOR"], "0")
         self.assertEqual(env["SPARTAN_DMEM_MB"], "6144")

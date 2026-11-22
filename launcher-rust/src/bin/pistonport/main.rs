@@ -4,7 +4,6 @@ mod icons;
 mod profile;
 mod trophies;
 #[allow(dead_code)]
-#[path = "../../core/trophy_data.rs"]
 mod trophy_data;
 mod view;
 
