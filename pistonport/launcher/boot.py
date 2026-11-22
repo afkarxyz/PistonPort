@@ -641,8 +641,7 @@ def install_github_update(asset_url, install_dir, wait_pid=None, spawn_apply=Tru
 
     if spawn_apply:
         creation_flags = (
-            getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
         subprocess.Popen(
@@ -658,6 +657,9 @@ def install_github_update(asset_url, install_dir, wait_pid=None, spawn_apply=Tru
                 str(script),
             ],
             cwd=str(work_dir.parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             close_fds=True,
             creationflags=creation_flags,
         )
