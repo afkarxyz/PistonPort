@@ -480,14 +480,33 @@ fn garage(app: &App, kit: &Kit) -> El {
         page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
     }
     let play_btn = if app.playing {
-        action(
-            kit,
-            "stop",
-            if app.stopping { "Stopping…" } else { "Stop" },
-            &icons::STOP,
-            (!app.stopping).then_some(Message::StopGame),
-            ButtonVariant::Danger,
-        )
+        let red = rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg);
+        let red_hover = rune::color::hex("#b42318").unwrap_or(red);
+        let red_press = rune::color::hex("#912018").unwrap_or(red_hover);
+        let label = if app.stopping { "Stopping…" } else { "Stop" };
+        let mut btn = row()
+            .key("stop")
+            .role("button")
+            .label(label)
+            .w(176.0)
+            .h(48.0)
+            .center()
+            .gap(8.0)
+            .radius(8.0)
+            .fill(red)
+            .hover(red_hover)
+            .press(red_press)
+            .focusable(true)
+            .child(rune::icon(&icons::STOP, 16.0).color(rune::Color::WHITE))
+            .child(
+                text(label)
+                    .font(kit.ty.ui_medium)
+                    .color(rune::Color::WHITE),
+            );
+        if !app.stopping {
+            btn = btn.on_press_tx(|app: &mut App, tx| app.update(Message::StopGame, tx));
+        }
+        btn
     } else {
         action(
             kit,
@@ -497,9 +516,9 @@ fn garage(app: &App, kit: &Kit) -> El {
             (!app.busy).then_some(Message::Play),
             ButtonVariant::Contrast,
         )
-    }
-    .w(176.0)
-    .h(48.0);
+        .w(176.0)
+        .h(48.0)
+    };
     let overlay = col()
         .w_full()
         .h_full()
