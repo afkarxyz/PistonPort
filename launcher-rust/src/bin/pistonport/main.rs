@@ -135,20 +135,11 @@ pub struct ToastNotice {
 #[derive(Clone)]
 struct GameSource {
     identity: String,
-    cover: Option<Image>,
 }
 
-fn load_game_source(
-    paths: &Paths,
-    source: &str,
-    cache: Option<&ImageCache>,
-) -> Result<GameSource, String> {
-    let SourceInspection { identity, cover } = paths.inspect(source)?;
-    let cover = cache
-        .filter(|_| !cover.is_empty())
-        .map(|cache| cache.load(cover))
-        .filter(|image| image.wait().is_ok());
-    Ok(GameSource { identity, cover })
+fn load_game_source(paths: &Paths, source: &str) -> Result<GameSource, String> {
+    let SourceInspection { identity, .. } = paths.inspect(source)?;
+    Ok(GameSource { identity })
 }
 
 struct App {
@@ -167,7 +158,6 @@ struct App {
     saved_source: String,
     game_identity: Option<(String, String)>,
     assets: Option<view::Artwork>,
-    default_cover: Option<Image>,
     backdrops: Vec<BackdropInfo>,
     backdrop_index: usize,
     backdrop_seq: u64,
@@ -236,7 +226,6 @@ impl App {
             saved_source: source.clone(),
             game_identity: None,
             assets: None,
-            default_cover: None,
             backdrops: Vec::new(),
             backdrop_index: 0,
             backdrop_seq: 0,
@@ -383,18 +372,15 @@ impl App {
     }
 
     fn set_source_info(&mut self, source: &str, inspection: Option<GameSource>) {
-        let cover = if let Some(inspection) = inspection {
+        if let Some(inspection) = inspection {
             self.game_identity = Some((source.to_owned(), inspection.identity));
-            inspection.cover
         } else {
             self.game_identity = None;
-            None
-        };
-        self.default_cover = cover.clone();
+        }
         self.backdrop_index = 0;
         self.backdrop_loading = false;
         if let Some(assets) = &mut self.assets {
-            assets.cover = cover;
+            assets.cover = None;
         }
         if self.game_identity.is_some() {
             let paths = self.paths.clone();
@@ -406,6 +392,22 @@ impl App {
         } else {
             self.backdrops.clear();
         }
+    }
+
+    fn random_backdrop_index(&self, exclude: usize) -> usize {
+        let count = self.backdrops.len();
+        if count <= 1 {
+            return count;
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as usize ^ (d.as_secs() as usize).wrapping_mul(2654435761))
+            .unwrap_or(1);
+        let mut pick = (nanos % count) + 1;
+        if pick == exclude {
+            pick = (pick % count) + 1;
+        }
+        pick
     }
 
     fn schedule_backdrop_timer(&mut self) {
@@ -423,31 +425,16 @@ impl App {
         });
     }
 
-    fn apply_backdrop_index(&mut self, index: usize, persist: bool, tx: Option<&mut Tx>) {
-        let total = self.backdrops.len() + 1;
-        let idx = index % total;
-        self.backdrop_index = idx;
-        if idx == 0 {
-            self.backdrop_loading = false;
-            if let Some(tx) = tx {
-                tx.animated();
-            }
-            self.backdrop_seq += 1;
-            if let Some(assets) = &mut self.assets {
-                assets.cover = self.default_cover.clone();
-            }
-            if persist {
-                let _ = profile::write(&self.paths.profile.join("garage-backdrop.txt"), "cover");
-            }
-            self.schedule_backdrop_timer();
+    fn apply_backdrop_index(&mut self, index: usize) {
+        let count = self.backdrops.len();
+        if count == 0 {
             return;
         }
+        let idx = ((index.saturating_sub(1)) % count) + 1;
+        self.backdrop_index = idx;
         let Some(entry) = self.backdrops.get(idx - 1).cloned() else {
             return;
         };
-        if persist {
-            let _ = profile::write(&self.paths.profile.join("garage-backdrop.txt"), &entry.id);
-        }
         let Some(cache) = self.assets.as_ref().map(|a| a.cache.clone()) else {
             return;
         };
@@ -473,10 +460,9 @@ impl App {
 
     fn inspect(&mut self, path: String, picked: bool) {
         let paths = self.paths.clone();
-        let cache = self.assets.as_ref().map(|assets| assets.cache.clone());
         let first_selection = picked && self.page == Page::Welcome;
         self.background(move || {
-            let result = load_game_source(&paths, &path, cache.as_deref()).and_then(|inspection| {
+            let result = load_game_source(&paths, &path).and_then(|inspection| {
                 if first_selection {
                     profile::write(&paths.profile.join("game-folder.txt"), &path)
                         .map_err(|error| format!("Could not save the game source: {error}"))?;
@@ -551,7 +537,7 @@ impl App {
         self.background(move || {
             let result = (|| {
                 let inspection = if !source.is_empty() && (changed_source || play) {
-                    Some(load_game_source(&paths, &source, cache.as_deref())?)
+                    Some(load_game_source(&paths, &source)?)
                 } else {
                     None
                 };
@@ -1042,8 +1028,8 @@ impl App {
                             .filter(|v| !v.is_empty())
                             .and_then(|wanted| self.backdrops.iter().position(|b| b.id == wanted))
                             .map(|pos| pos + 1)
-                            .unwrap_or(1);
-                        self.apply_backdrop_index(start, false, None);
+                            .unwrap_or_else(|| self.random_backdrop_index(0));
+                        self.apply_backdrop_index(start);
                     }
                 }
             }
@@ -1056,9 +1042,8 @@ impl App {
                     && !self.busy
                     && !self.backdrop_loading
                 {
-                    let count = self.backdrops.len();
-                    let next = (self.backdrop_index % count) + 1;
-                    self.apply_backdrop_index(next, false, Some(tx));
+                    let next = self.random_backdrop_index(self.backdrop_index);
+                    self.apply_backdrop_index(next);
                 } else {
                     self.schedule_backdrop_timer();
                 }
