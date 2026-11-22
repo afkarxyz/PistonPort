@@ -1497,8 +1497,12 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
         "Use Save"
     };
     let control = if app.selected.id == slot.id {
-        muted(kit, "Active")
+        row()
             .key(format!("active-save-{}", slot.id))
+            .center_y()
+            .gap(6.0)
+            .child(rune::icon(&icons::CHECK, 15.0).color(kit.c.success.fg))
+            .child(medium(kit, "Active").color(kit.c.success.fg))
             .transition(enter_only(
                 Transition::scale(0.94).combined(Transition::opacity()),
             ))
