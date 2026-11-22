@@ -323,9 +323,9 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
     };
     let mut content = col()
         .key("content")
-        .grow(1.0)
         .shrink()
         .min_w(0.0)
+        .max_w(276.0)
         .gap(4.0)
         .a11y_hidden()
         .child(
@@ -336,8 +336,7 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
                     ..kit.ty.ui_medium
                 })
                 .color(c.text_base)
-                .wrap_anywhere()
-                .w_full(),
+                .wrap_anywhere(),
         );
     let described = notice.detail.clone().unwrap_or_default();
     if let Some(detail) = &notice.detail {
@@ -346,8 +345,7 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
                 .key("description")
                 .font(kit.ty.ui)
                 .color(c.text_muted)
-                .wrap_anywhere()
-                .w_full(),
+                .wrap_anywhere(),
         );
     }
     let close = IconButton::new(kit.glyph.close)
@@ -362,7 +360,6 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
         .build(kit);
     let top = row()
         .key("top")
-        .w_full()
         .min_w(0.0)
         .gap(12.0)
         .items_start()
@@ -374,7 +371,7 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
         .role("status")
         .label(notice.title.clone())
         .description(described)
-        .w(360.0)
+        .max_w(360.0)
         .padding(12.0)
         .gap(10.0)
         .radius(8.0)
