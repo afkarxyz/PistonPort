@@ -21,6 +21,7 @@ pub struct BackdropInfo {
 #[derive(Clone)]
 pub struct SourceInspection {
     pub identity: String,
+    #[allow(dead_code)]
     pub cover: Vec<u8>,
 }
 

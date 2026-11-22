@@ -389,6 +389,7 @@ impl App {
                 let list = paths.list_backdrops(&src);
                 Message::BackdropsReady(src, list)
             });
+            self.open_trophies();
         } else {
             self.backdrops.clear();
         }
@@ -973,7 +974,6 @@ impl App {
                 }
             }
             Message::TrophiesLoaded(source, result) if source == self.trophies.source => {
-                tx.animated();
                 self.trophies.catalog = Some(result);
             }
             Message::OpenLog => {
