@@ -110,6 +110,7 @@ enum Message {
     TrophiesLoaded(String, Result<Vec<Trophy>, String>),
     BackdropsReady(String, Vec<BackdropInfo>),
     CycleBackdrop(i32),
+    AutoCycleBackdrop(u64),
     BackdropLoaded(String, Result<Image, String>),
     OpenLog,
     CopyCrashReport,
@@ -169,6 +170,8 @@ struct App {
     default_cover: Option<Image>,
     backdrops: Vec<BackdropInfo>,
     backdrop_index: usize,
+    backdrop_seq: u64,
+    backdrop_timer_gen: u64,
     backdrop_loading: bool,
     pad: [Pad; 15],
     slots: Vec<Slot>,
@@ -235,6 +238,8 @@ impl App {
             default_cover: None,
             backdrops: Vec::new(),
             backdrop_index: 0,
+            backdrop_seq: 0,
+            backdrop_timer_gen: 0,
             backdrop_loading: false,
             handle,
             native_window,
@@ -412,18 +417,38 @@ impl App {
         }
     }
 
-    fn apply_backdrop_index(&mut self, index: usize, persist: bool) {
+    fn schedule_backdrop_timer(&mut self) {
+        self.backdrop_timer_gen += 1;
+        let token = self.backdrop_timer_gen;
+        let handle = self.handle.clone();
+        let secs: u64 = std::env::var("PISTONPORT_BACKDROP_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&s| s >= 1)
+            .unwrap_or(8);
+        let _ = rune::task::spawn("PistonPort backdrop timer", move || {
+            std::thread::sleep(std::time::Duration::from_secs(secs));
+            handle.update(move |state, tx| state.update(Message::AutoCycleBackdrop(token), tx));
+        });
+    }
+
+    fn apply_backdrop_index(&mut self, index: usize, persist: bool, tx: Option<&mut Tx>) {
         let total = self.backdrops.len() + 1;
         let idx = index % total;
         self.backdrop_index = idx;
         if idx == 0 {
             self.backdrop_loading = false;
+            if let Some(tx) = tx {
+                tx.animated();
+            }
+            self.backdrop_seq += 1;
             if let Some(assets) = &mut self.assets {
                 assets.cover = self.default_cover.clone();
             }
             if persist {
                 let _ = profile::write(&self.paths.profile.join("garage-backdrop.txt"), "cover");
             }
+            self.schedule_backdrop_timer();
             return;
         }
         let Some(entry) = self.backdrops.get(idx - 1).cloned() else {
@@ -1028,8 +1053,12 @@ impl App {
                         });
                     if !wanted.is_empty() && wanted != "cover" {
                         if let Some(pos) = self.backdrops.iter().position(|b| b.id == wanted) {
-                            self.apply_backdrop_index(pos + 1, false);
+                            self.apply_backdrop_index(pos + 1, false, None);
+                        } else if !self.backdrops.is_empty() {
+                            self.schedule_backdrop_timer();
                         }
+                    } else if !self.backdrops.is_empty() {
+                        self.schedule_backdrop_timer();
                     }
                 }
             }
@@ -1037,7 +1066,6 @@ impl App {
                 let total = self.backdrops.len() + 1;
                 if total > 1 {
                     let next = if delta == 0 {
-                        // Deterministic-free shuffle using system clock nanos
                         let nanos = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.subsec_nanos() as usize)
@@ -1052,7 +1080,23 @@ impl App {
                     } else {
                         (self.backdrop_index + total - 1) % total
                     };
-                    self.apply_backdrop_index(next, true);
+                    self.apply_backdrop_index(next, true, Some(tx));
+                }
+            }
+            Message::AutoCycleBackdrop(token) => {
+                if token != self.backdrop_timer_gen || self.backdrops.is_empty() {
+                    return;
+                }
+                if self.page == Page::Garage
+                    && !self.playing
+                    && !self.busy
+                    && !self.backdrop_loading
+                {
+                    let total = self.backdrops.len() + 1;
+                    let next = (self.backdrop_index + 1) % total;
+                    self.apply_backdrop_index(next, false, Some(tx));
+                } else {
+                    self.schedule_backdrop_timer();
                 }
             }
             Message::BackdropLoaded(id, result) => {
@@ -1065,6 +1109,8 @@ impl App {
                     self.backdrop_loading = false;
                     match result {
                         Ok(image) => {
+                            tx.animated();
+                            self.backdrop_seq += 1;
                             if let Some(assets) = &mut self.assets {
                                 assets.cover = Some(image);
                             }
@@ -1073,6 +1119,7 @@ impl App {
                             self.push_toast("Backdrop Error", Some(error), true, false);
                         }
                     }
+                    self.schedule_backdrop_timer();
                 }
             }
             Message::Gamepad(action) if !self.busy && self.page != Page::Welcome => {

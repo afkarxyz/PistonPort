@@ -459,9 +459,23 @@ fn garage(app: &App, kit: &Kit) -> El {
         .fill(kit.c.bg_base)
         .transition(Transition::none());
     if let Some(cover) = app.assets.as_ref().and_then(|a| a.cover.as_ref()) {
-        page = page
-            .pixels_fit(cover.pixels(), SurfaceFit::Fill)
-            .surface_anchor(Align::Start, Align::Start);
+        let stage = el()
+            .key("garage-backdrop-stage")
+            .absolute(0.0, 0.0)
+            .w_full()
+            .h_full()
+            .dissolve()
+            .child(
+                el().key(format!("garage-bg-{}", app.backdrop_seq))
+                    .absolute(0.0, 0.0)
+                    .w_full()
+                    .h_full()
+                    .pixels_fit(cover.pixels(), SurfaceFit::Fill)
+                    .surface_anchor(Align::Start, Align::Start)
+                    .transition(Transition::opacity())
+                    .motion(Spring::new(0.65, 0.0)),
+            );
+        page = page.child(stage);
     } else {
         page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
     }
