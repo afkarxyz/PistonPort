@@ -452,33 +452,31 @@ fn welcome(app: &App, kit: &Kit) -> El {
 }
 
 fn garage(app: &App, kit: &Kit) -> El {
-    let mut page = el()
+    let page = el()
         .key("garage-page")
         .grow(1.0)
         .min_h(0.0)
         .fill(kit.c.bg_base)
         .transition(Transition::none());
-    if let Some(cover) = app.assets.as_ref().and_then(|a| a.cover.as_ref()) {
-        let stage = el()
-            .key("garage-backdrop-stage")
-            .absolute(0.0, 0.0)
-            .w_full()
-            .h_full()
-            .dissolve()
-            .child(
-                el().key(format!("garage-bg-{}", app.backdrop_seq))
-                    .absolute(0.0, 0.0)
-                    .w_full()
-                    .h_full()
-                    .pixels_fit(cover.pixels(), SurfaceFit::Fill)
-                    .surface_anchor(Align::Start, Align::Start)
-                    .transition(Transition::opacity())
-                    .motion(Spring::new(0.65, 0.0)),
-            );
-        page = page.child(stage);
-    } else {
-        page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
-    }
+    let Some(cover) = app.assets.as_ref().and_then(|a| a.cover.as_ref()) else {
+        return page.center().child(Loader::new().size(24.0).build(kit));
+    };
+    let stage = el()
+        .key("garage-backdrop-stage")
+        .absolute(0.0, 0.0)
+        .w_full()
+        .h_full()
+        .dissolve()
+        .child(
+            el().key(format!("garage-bg-{}", app.backdrop_seq))
+                .absolute(0.0, 0.0)
+                .w_full()
+                .h_full()
+                .pixels_fit(cover.pixels(), SurfaceFit::Fill)
+                .surface_anchor(Align::Start, Align::Start)
+                .transition(Transition::opacity())
+                .motion(Spring::new(0.65, 0.0)),
+        );
     let play_btn = if app.playing {
         let red = rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg);
         let red_hover = rune::color::hex("#b42318").unwrap_or(red);
@@ -520,13 +518,17 @@ fn garage(app: &App, kit: &Kit) -> El {
         .h(48.0)
     };
     let overlay = col()
+        .key("garage-play-overlay")
+        .absolute(0.0, 0.0)
         .w_full()
         .h_full()
         .justify_center()
         .items_end()
         .pr(44.0)
+        .transition(Transition::opacity())
+        .motion(Spring::new(0.35, 0.0))
         .child(play_btn);
-    page.child(overlay)
+    page.child(stage).child(overlay)
 }
 
 fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
