@@ -1282,6 +1282,24 @@ fn center_window(window: &rune::WindowHandle) {
         };
         // The borrowed HWND belongs to Rune's hidden window and is live in this callback.
         unsafe {
+            #[link(name = "dwmapi")]
+            unsafe extern "system" {
+                fn DwmSetWindowAttribute(
+                    hwnd: *mut std::ffi::c_void,
+                    dw_attribute: u32,
+                    pv_attribute: *const std::ffi::c_void,
+                    cb_attribute: u32,
+                ) -> i32;
+            }
+            const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+            const DWMWCP_ROUND: u32 = 2;
+            let pref = DWMWCP_ROUND;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                (&raw const pref).cast(),
+                std::mem::size_of::<u32>() as u32,
+            );
             let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             if GetWindowRect(hwnd, &mut frame) == 0 || GetMonitorInfoW(monitor, &mut display) == 0 {
                 return;
