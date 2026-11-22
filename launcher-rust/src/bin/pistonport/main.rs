@@ -532,7 +532,6 @@ impl App {
         );
         let changed_source = source != self.saved_source;
         let paths = self.paths.clone();
-        let cache = self.assets.as_ref().map(|assets| assets.cache.clone());
         let settings = self.settings.clone();
         let pad = self.pad;
         self.background(move || {
@@ -671,10 +670,12 @@ impl App {
             }
             Message::UpdateChecked(result, manual) => {
                 self.checking_update = false;
+                if manual {
+                    self.report("Ready to Play", false);
+                }
                 if let Ok(info) = &result {
                     if info.available {
                         tx.animated();
-                        self.report(format!("Update Available: {}", info.tag), false);
                         if manual {
                             self.push_toast(
                                 format!("Update Available: {}", info.tag),
@@ -686,7 +687,6 @@ impl App {
                     } else if manual {
                         tx.animated();
                         let msg = format!("PistonPort is Up to Date (v{})", env!("CARGO_PKG_VERSION"));
-                        self.report(msg.clone(), false);
                         self.push_toast(msg, Some(format!("Latest release: {}", info.tag)), false, false);
                     }
                 } else if let (true, Err(error)) = (manual, &result) {
@@ -700,8 +700,6 @@ impl App {
                     if let Err(error) = profile::open_url(&fallback_url) {
                         tx.animated();
                         self.push_toast("Could Not Open Browser", Some(error), true, false);
-                    } else {
-                        self.report("Opened GitHub Release Page", false);
                     }
                     return;
                 }
@@ -727,7 +725,7 @@ impl App {
                     }
                     Err(error) => {
                         tx.animated();
-                        self.report("Update Failed", true);
+                        self.report("Ready to Play", false);
                         self.push_toast("Update Failed", Some(error), true, false);
                     }
                 }
@@ -736,8 +734,6 @@ impl App {
                 if let Err(error) = profile::open_url("https://afkarxyz.gumroad.com/coffee") {
                     tx.animated();
                     self.push_toast("Could Not Open Browser", Some(error), true, false);
-                } else {
-                    self.report("Opened Buy Me a Coffee Page", false);
                 }
             }
             Message::Preset(preset) if !self.busy => {
@@ -875,7 +871,7 @@ impl App {
                         }
                         self.source = TextEdit::new(&source);
                         self.saved_source = source.clone();
-                        self.report("Settings Saved", false);
+                        self.report("Ready to Play", false);
                         if !play {
                             tx.animated();
                             self.push_toast("Settings Saved", None, false, false);
@@ -940,7 +936,7 @@ impl App {
                             .and_then(|n| n.to_str())
                             .unwrap_or("ZIP archive")
                             .to_owned();
-                        self.report(format!("Exported Save to {name}"), false);
+                        self.report("Ready to Play", false);
                         self.push_toast("Save Exported", Some(name), false, false);
                     }
                     Err(error) => {
@@ -960,7 +956,7 @@ impl App {
                         } else {
                             "Save Slot Selected"
                         };
-                        self.report(msg, false);
+                        self.report("Ready to Play", false);
                         self.push_toast(
                             msg,
                             Some(self.selected.label.clone()),
@@ -980,8 +976,6 @@ impl App {
                 if let Err(error) = self.paths.open_log() {
                     tx.animated();
                     self.push_toast("Could Not Open Log", Some(error), true, false);
-                } else {
-                    self.report("Opened native-last.log", false);
                 }
             }
             Message::CopyCrashReport if !self.busy => {
@@ -1000,7 +994,7 @@ impl App {
                 tx.animated();
                 match result {
                     Ok(()) => {
-                        self.report("Crash Report Copied to Clipboard", false);
+                        self.report("Ready to Play", false);
                         self.push_toast(
                             "Crash Report Copied",
                             Some("System specs, settings, and log details are on your clipboard.".into()),
