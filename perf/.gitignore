@@ -1,3 +1,0 @@
-# Run outputs hold game images and logs: never committed. Baselines live in perf/baseline/.
-results/
-__pycache__/

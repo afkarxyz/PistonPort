@@ -67,7 +67,6 @@ def stage_licenses(runtime):
         (project / "LICENSE.txt", "shadPS4-GPL.txt"),
         (here / "lucide/LICENSE", "Lucide.txt"),
         (repo / "launcher-rust/assets/pads/LICENSE.txt", "Controller-art.txt"),
-        (repo / "launcher/OFL-Cinzel.txt", "OFL-Cinzel.txt"),
         (repo / "gpu/third_party/fonts/LICENSE-DejaVu.txt", "DejaVu.txt"),
         (repo / "gpu/third_party/imgui/LICENSE.txt", "Dear-ImGui.txt"),
     ):
