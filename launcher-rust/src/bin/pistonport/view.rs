@@ -1604,11 +1604,14 @@ fn trophies(app: &App, kit: &Kit) -> El {
         }
         _ => String::new(),
     };
-    let summary_el = row()
-        .w(150.0)
-        .justify_end()
-        .center_y()
-        .child(body(kit, summary).transition(Transition::none()));
+    let mut summary_el = row().w(150.0).justify_end().center_y();
+    if !summary.is_empty() {
+        summary_el = summary_el.child(
+            body(kit, summary)
+                .key("trophies-summary")
+                .transition(Transition::none()),
+        );
+    }
     let page = page_frame(kit, "trophies-page", "Trophies", summary_el)
         .child(muted(kit, &app.selected.label));
     if !valid_slot {
