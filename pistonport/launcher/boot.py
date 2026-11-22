@@ -975,7 +975,7 @@ def main():
     args = argparse.ArgumentParser()
     args.add_argument("--game", type=Path)
     args.add_argument("--profile", type=Path)
-    args.add_argument("--current-version", default="1.1.2")
+    args.add_argument("--current-version", default="1.1.3")
     args.add_argument("--install-dir", type=Path)
     args.add_argument("--wait-pid", type=int)
     action = args.add_mutually_exclusive_group()
