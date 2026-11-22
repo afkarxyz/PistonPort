@@ -367,6 +367,14 @@ def resolve_runtime_env(values, base_env=None, *, ram_gib=None, adapters=None):
     if safe_mode:
         env.setdefault("SPARTAN_AMD_PATHS_OFF", "all")
         env.setdefault("SPARTAN_PIPELINE_BINARIES", "0")
+        # Avoid SDL3 WGI / RawInput / DirectInput joystick crashes on Windows 11 + AMD handhelds.
+        env.setdefault("SDL_JOYSTICK_WGI", "0")
+        env.setdefault("SDL_JOYSTICK_RAWINPUT", "0")
+        env.setdefault("SDL_JOYSTICK_DIRECTINPUT", "0")
+        # On AMD handhelds (unified <=20 GiB RAM, e.g. ROG Ally Z1E) or explicit Safe mode,
+        # also disable HIDAPI so SDL3 uses pure XInput for the embedded controller.
+        if low_ram or compat_mode == "safe":
+            env.setdefault("SDL_JOYSTICK_HIDAPI", "0")
 
     options = {
         "fps_limit": rate,

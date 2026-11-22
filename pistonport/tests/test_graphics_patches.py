@@ -272,6 +272,29 @@ class BootHelpersTest(unittest.TestCase):
         self.assertGreater(boot.parse_version_tuple("v1.2.0"), boot.parse_version_tuple("1.1.0"))
         self.assertFalse(boot.parse_version_tuple("v1.0.0") > boot.parse_version_tuple("1.1.0"))
 
+    def test_rog_ally_safe_mode_sdl_xinput_env(self):
+        # ROG Ally Z1E (AMD-only + <=20 GiB unified RAM): disables WGI, RawInput, DirectInput, and HIDAPI
+        env, _ = boot.resolve_runtime_env(
+            {"compat_mode": "auto"},
+            base_env={},
+            adapters=["AMD Radeon Graphics"],
+            ram_gib=9.7,
+        )
+        self.assertEqual(env.get("SDL_JOYSTICK_WGI"), "0")
+        self.assertEqual(env.get("SDL_JOYSTICK_RAWINPUT"), "0")
+        self.assertEqual(env.get("SDL_JOYSTICK_DIRECTINPUT"), "0")
+        self.assertEqual(env.get("SDL_JOYSTICK_HIDAPI"), "0")
+
+        # AMD desktop (32 GiB RAM, auto): keeps HIDAPI enabled for DualSense/DS4
+        env_desktop, _ = boot.resolve_runtime_env(
+            {"compat_mode": "auto"},
+            base_env={},
+            adapters=["AMD Radeon RX 7800 XT"],
+            ram_gib=32.0,
+        )
+        self.assertEqual(env_desktop.get("SDL_JOYSTICK_WGI"), "0")
+        self.assertNotIn("SDL_JOYSTICK_HIDAPI", env_desktop)
+
 
 if __name__ == "__main__":
     unittest.main()
