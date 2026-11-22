@@ -1604,7 +1604,12 @@ fn trophies(app: &App, kit: &Kit) -> El {
         }
         _ => String::new(),
     };
-    let page = page_frame(kit, "trophies-page", "Trophies", body(kit, summary))
+    let summary_el = row()
+        .w(150.0)
+        .justify_end()
+        .center_y()
+        .child(body(kit, summary).transition(Transition::none()));
+    let page = page_frame(kit, "trophies-page", "Trophies", summary_el)
         .child(muted(kit, &app.selected.label));
     if !valid_slot {
         return page.child(body(kit, "This save slot could not be found.").color(kit.c.danger.fg));
