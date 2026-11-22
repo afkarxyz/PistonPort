@@ -2,7 +2,7 @@
 set(pistonport_pad_assets "${CMAKE_CURRENT_SOURCE_DIR}/../launcher-rust/assets/pads")
 set(pistonport_icon_header "#pragma once\nnamespace PistonPortPadIcons {\n")
 foreach(icon IN ITEMS
-    dualshock4/leftstick.png
+    icons/playstation/playstation_stick_l.png
     icons/playstation/playstation_trigger_r2.png
     icons/playstation/playstation_trigger_l2.png
     icons/playstation/playstation_button_color_square.png

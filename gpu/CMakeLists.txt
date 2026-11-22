@@ -281,9 +281,11 @@ if (WIN32)
     target_include_directories(spartanport-gpu-capabilities PRIVATE shadps4)
     target_link_libraries(spartanport-gpu-capabilities PRIVATE Vulkan::Vulkan)
     # "Play SpartanPort.exe": the game with the launcher's saved settings, no launcher window.
-    add_executable(spartanport-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
-    target_compile_options(spartanport-play PRIVATE -municode)
-    target_link_options(spartanport-play PRIVATE -municode)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/windows/play.c")
+        add_executable(spartanport-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
+        target_compile_options(spartanport-play PRIVATE -municode)
+        target_link_options(spartanport-play PRIVATE -municode)
+    endif()
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.

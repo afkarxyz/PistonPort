@@ -20,7 +20,6 @@ if ((Resolve-Path $Source).Path -ne $repo) {
         'gpu/shim/spartanport_settings.h',
         'gpu/spartanportgpu.h',
         'gpu/tools/overlay_preview.cpp',
-        'launcher-rust/assets/pads/dualshock4/leftstick.png',
         'src/runtime_pad.c',
         'tests/test_pad_map.c'
     )

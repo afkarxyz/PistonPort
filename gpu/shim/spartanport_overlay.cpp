@@ -1949,7 +1949,7 @@ struct KeyboardHint {
 };
 namespace PadIcons = PistonPortPadIcons;
 KeyboardHint keyboard_hints[] = {
-    {"move_left", PadIcons::leftstick, {}, "move_right"},
+    {"move_left", PadIcons::playstation_stick_l, {}, "move_right"},
     {"r2", PadIcons::playstation_trigger_r2},
     {"l2", PadIcons::playstation_trigger_l2},
     {"square", PadIcons::playstation_button_color_square},

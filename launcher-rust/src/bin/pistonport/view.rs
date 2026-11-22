@@ -18,8 +18,8 @@ use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab, ToastNotice};
 
 const ICON: &[u8] = include_bytes!("../../../../pistonport/launcher/pistonport.png");
 const DUALSHOCK_STICK: &[u8] =
-    include_bytes!("../../../assets/pads/icons/playstation/playstation_button_l3.png");
-const XBOX_STICK: &[u8] = include_bytes!("../../../assets/pads/icons/xbox/xbox_ls.png");
+    include_bytes!("../../../assets/pads/icons/playstation/playstation_stick_l.png");
+const XBOX_STICK: &[u8] = include_bytes!("../../../assets/pads/icons/xbox/xbox_stick_l.png");
 
 macro_rules! pad_art {
     ($system:literal, $name:literal) => {
