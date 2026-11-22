@@ -1,6 +1,6 @@
 [package]
 name = "pistonport"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.99.1"
 license = "GPL-2.0-or-later"
@@ -13,8 +13,8 @@ path = "../src/bin/pistonport/main.rs"
 fs2 = "0.4"
 rfd = "0.17"
 tempfile = "3"
-rune = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c", default-features = false, features = ["accessibility", "embedded-fonts", "tooling"] }
-rune-kit = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c", default-features = false }
+rune = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752", default-features = false, features = ["accessibility", "embedded-fonts", "tooling"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
@@ -24,9 +24,9 @@ winresource = "0.1"
 
 # Rune uses these Windows and text pipeline fixes from the same revision.
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
-winit = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
-sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
-parley_engine = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
-accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
-accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "b39e1b4d326e323e971b86b8f105d3df53d4642c" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+winit = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }

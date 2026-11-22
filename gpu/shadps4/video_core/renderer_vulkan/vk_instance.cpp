@@ -978,7 +978,9 @@ void Instance::CollectPhysicalMemoryInfo() {
         return;
     }
     // Leave at least 8 GB for the system on integrated GPUs.
-    const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
+    const s64 available_memory = total_memory_budget > device_initial_usage
+                                     ? static_cast<s64>(total_memory_budget - device_initial_usage)
+                                     : 0;
     total_memory_budget =
         static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(local_memory)));
 }

@@ -80,7 +80,12 @@ def stage_licenses(runtime):
 
 
 def stage(runtime):
-    tree(ps4 / "piston-runtime", runtime / "bin")
+    shutil.copytree(
+        ps4 / "piston-runtime",
+        runtime / "bin",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git", "vulkan-1.dll", "VULKAN-1.DLL"),
+    )
     tree(ps4 / "piston-package/python", runtime / "python")
     (runtime / "python/python313._pth").write_text(
         "python313.zip\n.\n../tools\n../upstream/scripts\n../lib\n", encoding="ascii")

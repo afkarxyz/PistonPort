@@ -146,6 +146,15 @@ void UniqueBuffer::Create(vk::BufferCreateInfo& buffer_ci, MemoryType mem_type,
             over_budget.flags &= ~VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT;
             result = vmaCreateBuffer(allocator, &buffer_ci_unsafe, &over_budget, &unsafe_buffer,
                                      &allocation, out_alloc_info);
+            if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+                // spartanport: AMD/Intel iGPUs with small VRAM carve-outs can refuse a
+                // device-local or dedicated buffer even when shared system memory has GBs free.
+                over_budget.flags &= ~VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+                over_budget.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+                over_budget.preferredFlags = 0;
+                result = vmaCreateBuffer(allocator, &buffer_ci_unsafe, &over_budget, &unsafe_buffer,
+                                         &allocation, out_alloc_info);
+            }
         }
         ASSERT_MSG(result == VK_SUCCESS, "Failed allocating buffer with error {}",
                    vk::to_string(vk::Result{result}));

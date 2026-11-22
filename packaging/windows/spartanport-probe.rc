@@ -3,8 +3,8 @@ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "spartanport-probe.manifest"
 // The first icon is the one Explorer and the game window show.
 1 ICON "../../launcher/piston-game.ico"
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
 FILEOS 0x40004
 FILETYPE 1
 BEGIN

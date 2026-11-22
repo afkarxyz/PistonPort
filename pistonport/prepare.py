@@ -2,15 +2,49 @@
 
 import argparse
 import hashlib
+import math
+import os
 import struct
 import subprocess
 import sys
 from pathlib import Path
 
-from elftools.elf.elffile import ELFFile
-from fibers import compile_fibers
-
 TARGET_HASH = "56d27cc83b7fe34921fb07413dd7c8fb255daf357a3f81c2d882969f001ff654"
+RESOLUTIONS = {
+    "720p": (1280, 720),
+    "1280x800": (1280, 800),
+    "900p": (1600, 900),
+    "native": (1920, 1080),
+    "2560x1080": (2560, 1080),
+    "1440p": (2560, 1440),
+    "3440x1440": (3440, 1440),
+    "3840x1600": (3840, 1600),
+    "5120x1440": (5120, 1440),
+    "4K": (3840, 2160),
+}
+_RESOLUTION_ALIASES = {
+    "720p": "720p",
+    "1280x720": "720p",
+    "1280x800": "1280x800",
+    "800p": "1280x800",
+    "900p": "900p",
+    "1600x900": "900p",
+    "native": "native",
+    "1080p": "native",
+    "1920x1080": "native",
+    "2560x1080": "2560x1080",
+    "1440p": "1440p",
+    "2560x1440": "1440p",
+    "3440x1440": "3440x1440",
+    "3840x1600": "3840x1600",
+    "5120x1440": "5120x1440",
+    "4k": "4K",
+    "2160p": "4K",
+    "3840x2160": "4K",
+}
+SHADOW_RESOLUTIONS = (1024, 2048, 3072, 4096)
+FOV_SCALES = (100, 110, 120, 130)
+BASE_DMEM_MB = 5056
 # The toolkit and public NetCtl callbacks use the same PS4 calling convention.
 # Both use the offline network provider in this build.
 ALIASES = {
@@ -105,7 +139,292 @@ def set_60fps_presentation(image):
         image[offset : offset + len(expected)] = bytes.fromhex(replacement)
 
 
+def parse_resolution(value):
+    key = _RESOLUTION_ALIASES.get(str(value or "").strip().lower(), "native")
+    return key, RESOLUTIONS[key]
+
+
+def parse_shadow_resolution(value):
+    try:
+        size = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 2048
+    return size if size in SHADOW_RESOLUTIONS else 2048
+
+
+def parse_fov_scale(value):
+    try:
+        scale = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 100
+    return scale if scale in FOV_SCALES else 100
+
+
+def required_heap_spec(resolution="native", shadow_resolution=2048):
+    _, (width, height) = parse_resolution(resolution)
+    shadow = parse_shadow_resolution(shadow_resolution)
+    pixels = width * height
+    if pixels > 5_000_000:
+        return b'size="3.6G"', 8192
+    if pixels > 2_200_000 or shadow > 2048:
+        return b'size="2.8G"', 6144
+    return None, BASE_DMEM_MB
+
+
+def required_dmem_mb(resolution="native", shadow_resolution=2048):
+    return required_heap_spec(resolution, shadow_resolution)[1]
+
+
+def _probe_image_offset(data):
+    header = struct.Struct("<8s6Q")
+    if len(data) < 104:
+        raise ValueError("Truncated SpartanPort image")
+    magic, size, _entry, ns, nr, ni, _flags = header.unpack_from(data)
+    if magic != b"G3PROBE5":
+        raise ValueError("Unsupported SpartanPort image version")
+    nmods = struct.unpack_from("<Q", data, 96)[0]
+    binding_start = 104 + 56 * nmods
+    if binding_start + 8 > len(data):
+        raise ValueError("Unexpected probe image layout")
+    nb = struct.unpack_from("<Q", data, binding_start)[0]
+    segment_start = binding_start + 8 + nb * 24
+    name_start = segment_start + ns * 24
+    relocation_start = name_start + ni * 128
+    image_start = relocation_start + nr * 32
+    if image_start + size != len(data):
+        raise ValueError("Unexpected probe image layout")
+    return image_start, size
+
+
+def _replace_bytes(image, offset, expected, replacement, label):
+    end = offset + len(expected)
+    if image[offset:end] != expected:
+        raise ValueError(f"Unexpected {label} bytes at {offset:#x}")
+    image[offset:end] = replacement
+
+
+def patch_graphics(
+    image,
+    resolution="native",
+    shadow_resolution=2048,
+    motion_blur=False,
+    fov_scale=100,
+    skip_intro=False,
+    high_lod=False,
+    bloom=True,
+):
+    """Patch CUSA07027 01.00 guest image for resolution, ultrawide, shadows, FOV, LOD, intro skip, bloom, and motion blur."""
+    res_key, (width, height) = parse_resolution(resolution)
+    shadow = parse_shadow_resolution(shadow_resolution)
+    fov = parse_fov_scale(fov_scale)
+
+    if (width, height) != (1920, 1080):
+        w0 = struct.pack("<I", 1920)
+        h0 = struct.pack("<I", 1080)
+        wh0 = w0 + h0
+        w1 = struct.pack("<I", width)
+        h1 = struct.pack("<I", height)
+        wh1 = w1 + h1
+        w0_16 = struct.pack("<H", 1920)
+        h0_16 = struct.pack("<H", 1080)
+        w1_16 = struct.pack("<H", width)
+        h1_16 = struct.pack("<H", height)
+        # Update all internal render-target, VideoOut, initial viewport, scissor,
+        # and viewport-builder sites while leaving the 1920x1080 UI layout intact.
+        for offset, expected, replacement in (
+            (0x4467EB, wh0, wh1),
+            (0x5649C, wh0, wh1),
+            (0x56DB8, w0, w1),
+            (0x56DBF, h0, h1),
+            (0xDE0370, wh0, wh1),
+            (0xDE0380, wh0, wh1),
+            (0x5A970, w0, w1),
+            (0x5A976, h0, h1),
+            (0x5A98B, w0, w1),
+            (0x5A991, h0, h1),
+            (0x8BD17, w0_16, w1_16),
+            (0x8BD1D, h0_16, h1_16),
+            (0x8BD3D, w0_16, w1_16),
+            (0x8BD58, h0_16, h1_16),
+        ):
+            _replace_bytes(image, offset, expected, replacement, f"resolution ({res_key})")
+
+        aspect = width / height
+        if abs(aspect - (16.0 / 9.0)) > 1e-4:
+            ar0_f = struct.pack("<f", 16.0 / 9.0)
+            iar0_f = struct.pack("<f", 9.0 / 16.0)
+            ar1_f = struct.pack("<f", aspect)
+            iar1_f = struct.pack("<f", height / width)
+            ar0_d = bytes.fromhex("00 00 00 20 c7 71 fc 3f")
+            ar1_d = struct.pack("<d", aspect)
+            for offset, expected, replacement in (
+                (0x564E2, ar0_f, ar1_f),
+                (0xDE0958, iar0_f + ar0_f, iar1_f + ar1_f),
+                (0xDE0968, iar0_f + ar0_f, iar1_f + ar1_f),
+                (0xE84630, ar0_d, ar1_d),
+            ):
+                _replace_bytes(image, offset, expected, replacement, f"aspect ratio ({res_key})")
+            if aspect > (16.0 / 9.0) + 1e-4:
+                # Switch ultrawide FOV handling from Vert- cropping to Hor+ so wider
+                # displays expand horizontal view instead of zooming vertically.
+                _replace_bytes(
+                    image,
+                    0x2EA99A,
+                    bytes.fromhex("76 48"),
+                    bytes.fromhex("eb 48"),
+                    f"ultrawide Hor+ ({res_key})",
+                )
+                # Widen Scaleform's centered 2D orthographic canvas width from 1920.0f
+                # to 1080.0f * aspect so 16:9 menus, HUD, and button prompts stay
+                # 1:1 proportional and centered instead of stretching horizontally.
+                ui_width = struct.pack("<f", 1080.0 * aspect)
+                _replace_bytes(
+                    image,
+                    0x36A487,
+                    struct.pack("<f", 1920.0),
+                    ui_width,
+                    f"ultrawide HUD width ({res_key})",
+                )
+
+    if shadow != 2048:
+        # Octane reads a single base shadow-map float (2048.0f) and multiplies it
+        # by the splitscreen scale factor (1.0 / 0.75 / 0.5) for the 3-cascade map.
+        _replace_bytes(
+            image,
+            0xE32710,
+            struct.pack("<f", 2048.0),
+            struct.pack("<f", float(shadow)),
+            f"shadow resolution ({shadow})",
+        )
+
+    if fov != 100:
+        # Redirect camera FieldOfView deg->rad load to a 4-byte aligned padding
+        # slot right after the function's tail jump, holding (pi/180) * fov_scale.
+        scaled_deg2rad = struct.pack("<f", (math.pi / 180.0) * (fov / 100.0))
+        _replace_bytes(
+            image,
+            0x2EA3A7,
+            bytes.fromhex("48 8d 05 7a 32 af 00"),
+            bytes.fromhex("48 8d 05 2e 00 00 00"),
+            f"FOV load ({fov}%)",
+        )
+        _replace_bytes(
+            image,
+            0x2EA3DC,
+            bytes.fromhex("90 90 90 90"),
+            scaled_deg2rad,
+            f"FOV constant ({fov}%)",
+        )
+
+    if skip_intro:
+        # Skip the boot logo video loop (AvLogo / WBG_Logo / Pixar_Logo / DIS / CESA)
+        # while keeping Bink setup/teardown intact, and zero the static splash timer.
+        _replace_bytes(
+            image,
+            0x8B0562,
+            bytes.fromhex("45 31 e4 4c 8d 7d 90"),
+            bytes.fromhex("e9 da 01 00 00 90 90"),
+            "skip intro videos",
+        )
+        _replace_bytes(
+            image,
+            0x69F3E7,
+            bytes.fromhex("81 fb b7 0b 00 00"),
+            bytes.fromhex("81 fb 00 00 00 00"),
+            "skip logo splash timer",
+        )
+
+    if high_lod:
+        # Enable Cars 3's built-in ForceHighLOD global flag so cars and track
+        # props keep full-detail geometry instead of popping to low-LOD meshes.
+        _replace_bytes(
+            image,
+            0x8C7BF1,
+            bytes.fromhex("e8 6a b6 fe ff"),
+            bytes.fromhex("b0 01 90 90 90"),
+            "force high LOD",
+        )
+
+    # Fix high-FPS car smear: Octane scales per-car stencil reprojection blur by
+    # (42.0 / dt_ms) / 14.0, which quadruples blur intensity at 120 FPS. Always
+    # branch to the 33.0 ms reference divisor so shutter blur scales cleanly.
+    _replace_bytes(
+        image,
+        0x7B1C9D,
+        bytes.fromhex("74 0e"),
+        bytes.fromhex("eb 0e"),
+        "motion blur shutter",
+    )
+    if not motion_blur:
+        # Skip MotionBlurPrepare + per-frame callback + MotionBlur composite.
+        _replace_bytes(
+            image,
+            0x7BE789,
+            bytes.fromhex("0f 84 7c 01 00 00"),
+            bytes.fromhex("e9 7d 01 00 00 90"),
+            "motion blur toggle",
+        )
+
+    if not bloom:
+        # Zero g_LowWeight and g_HighWeight in Octane's Bloom UpscaleAccum setup
+        # so bloomBuffer still clears cleanly to 0.0 each frame without glow.
+        for offset, label in (
+            (0x7CA4F4, "bloom low weight"),
+            (0x7CA52D, "bloom high weight"),
+        ):
+            _replace_bytes(
+                image,
+                offset,
+                bytes.fromhex("41 8b 4c 24 04"),
+                bytes.fromhex("31 c9 90 90 90"),
+                label,
+            )
+
+    xml_size, _ = required_heap_spec(res_key, shadow)
+    if xml_size is not None:
+        # Expand Octane's embedded GPU Data direct-memory heap XML entry (11 bytes)
+        # so 1440p / ultrawide / 4K render targets and 3072 / 4096 shadows fit cleanly.
+        _replace_bytes(image, 0xE3C4AE, b'size="2.2G"', xml_size, "GPU Data heap XML")
+
+
+def apply_graphics_patches(
+    base_path,
+    output_path,
+    resolution="native",
+    shadow_resolution=2048,
+    motion_blur=False,
+    fov_scale=100,
+    skip_intro=False,
+    high_lod=False,
+    bloom=True,
+):
+    base_path = Path(base_path)
+    output_path = Path(output_path)
+    data = base_path.read_bytes()
+    image_start, _ = _probe_image_offset(data)
+    image = bytearray(data[image_start:])
+    patch_graphics(
+        image,
+        resolution=resolution,
+        shadow_resolution=shadow_resolution,
+        motion_blur=motion_blur,
+        fov_scale=fov_scale,
+        skip_intro=skip_intro,
+        high_lod=high_lod,
+        bloom=bloom,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output_path.with_name(f"{output_path.name}.{os.getpid()}.tmp")
+    with tmp.open("wb") as handle:
+        handle.write(data[:image_start])
+        handle.write(image)
+    tmp.replace(output_path)
+    return output_path
+
+
 def prepare(game, reference, llvm, out, shad, prebuilt=None):
+    from elftools.elf.elffile import ELFFile
+
     if hashlib.sha256((game / "eboot.bin").read_bytes()).hexdigest() != TARGET_HASH:
         raise ValueError("Unsupported eboot.bin. This profile targets CUSA07027 01.00.")
     out.mkdir(parents=True, exist_ok=True)
@@ -139,6 +458,8 @@ def prepare(game, reference, llvm, out, shad, prebuilt=None):
     if prebuilt is not None:
         elf = prebuilt
     else:
+        from fibers import compile_fibers
+
         obj = out / "cars3-runtime.o"
         elf = out / "cars3-runtime.elf"
         subprocess.run(

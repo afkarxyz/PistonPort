@@ -8,9 +8,18 @@ mod trophies;
 mod trophy_data;
 mod view;
 
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    fs,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-use profile::{Choice, Paths, Settings, Slot, SourceInspection};
+use profile::{Choice, HardwareInfo, Paths, Preset, Settings, Slot, SourceInspection, UpdateInfo};
 use rfd::FileDialog;
 use rune::{
     AppHandle, AppSpec, Image, ImageCache, TextEdit, Tx, Waker, WindowHandle, WindowOptions,
@@ -28,6 +37,14 @@ enum Page {
     Trophies,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    Graphics,
+    Upscaling,
+    Gameplay,
+    System,
+}
+
 #[derive(Clone, Copy)]
 enum Picker {
     Package,
@@ -35,14 +52,45 @@ enum Picker {
     Save,
 }
 
+#[derive(Clone, Copy)]
+enum GamepadAction {
+    PrevTab,
+    NextTab,
+    Confirm,
+    Back,
+}
+
 #[derive(Clone)]
 enum Message {
     Page(Page),
+    SettingsTab(SettingsTab),
     Pick(Picker),
     Picked(Picker, Option<PathBuf>),
     Inspected(String, Result<GameSource, String>, bool),
+    HardwareLoaded(HardwareInfo),
+    CheckUpdate,
+    UpdateChecked(Result<UpdateInfo, String>, bool),
+    OpenUpdateUrl(String),
+    OpenCoffee,
+    Preset(Preset),
     Mode(Choice),
     Size(String),
+    Shadow(Choice),
+    Anisotropy(Choice),
+    MotionBlur(bool),
+    Bloom(bool),
+    Fov(Choice),
+    SkipIntro(bool),
+    HighLod(bool),
+    Fsr1(bool),
+    Rcas(bool),
+    RcasStrength(u16),
+    AsyncShaders(bool),
+    Vibration(u16),
+    GlyphStyle(Choice),
+    Gpu(String),
+    Monitor(String),
+    Compat(Choice),
     Rate(Choice),
     Vsync(bool),
     Fps(bool),
@@ -50,15 +98,33 @@ enum Message {
     Volume(u16),
     Map(usize, Pad),
     Reset,
+    ResetSettings,
     Save,
     Commit(String, Result<Option<GameSource>, String>, bool),
     SelectSlot(Slot),
+    ExportSave(Slot),
+    ExportPicked(Slot, Option<PathBuf>),
+    ExportDone(Result<PathBuf, String>),
     SaveDone(Result<Vec<u8>, String>, bool),
     TrophiesLoaded(String, Result<Vec<Trophy>, String>),
+    OpenLog,
+    CopyCrashReport,
+    ReportCopied(Result<(), String>),
+    DismissToast(u64),
+    Gamepad(GamepadAction),
     Play,
     GameDone(Result<Vec<u8>, String>),
     Minimize,
     Close,
+}
+
+#[derive(Clone, Debug)]
+pub struct ToastNotice {
+    pub id: u64,
+    pub title: String,
+    pub detail: Option<String>,
+    pub error: bool,
+    pub crash_action: bool,
 }
 
 #[derive(Clone)]
@@ -85,7 +151,12 @@ struct App {
     handle: AppHandle<Self>,
     native_window: Rc<RefCell<Option<WindowHandle>>>,
     page: Page,
+    settings_tab: SettingsTab,
     settings: Settings,
+    hardware: HardwareInfo,
+    update_info: Option<Result<UpdateInfo, String>>,
+    checking_update: bool,
+    playing_flag: Arc<AtomicBool>,
     source: TextEdit,
     saved_source: String,
     game_identity: Option<(String, String)>,
@@ -95,6 +166,8 @@ struct App {
     selected: Slot,
     trophies: TrophyPage,
     menu: Option<String>,
+    toast: Option<ToastNotice>,
+    toast_seq: u64,
     busy: bool,
     playing: bool,
     status: String,
@@ -108,13 +181,25 @@ impl App {
         native_window: Rc<RefCell<Option<WindowHandle>>>,
     ) -> Self {
         let migration_error = paths.migrate_retired_save_selection().err();
-        let error = migration_error.is_some();
         let (slots, selected) = profile::slots(&paths.profile);
         let source = profile::read(&paths.profile.join("game-folder.txt"));
+        let has_source = !source.is_empty();
+        let toast = migration_error.map(|detail| ToastNotice {
+            id: 1,
+            title: "Save Migration Notice".into(),
+            detail: Some(detail),
+            error: true,
+            crash_action: false,
+        });
         Self {
             settings: Settings::load(&paths.profile),
+            hardware: HardwareInfo::default(),
+            update_info: None,
+            checking_update: false,
+            playing_flag: Arc::new(AtomicBool::new(false)),
             pad: load_bindings(&paths.profile.join("controller.map")),
             page: Page::Welcome,
+            settings_tab: SettingsTab::Graphics,
             source: TextEdit::new(&source),
             saved_source: source.clone(),
             game_identity: None,
@@ -126,19 +211,34 @@ impl App {
             selected,
             trophies: TrophyPage::default(),
             menu: None,
-            busy: false,
+            toast,
+            toast_seq: 1,
+            busy: has_source,
             playing: false,
-            status: migration_error.unwrap_or_default(),
-            error,
+            status: if has_source {
+                "Loading Cars 3: Driven to Win…".into()
+            } else {
+                "Ready to Play".into()
+            },
+            error: false,
         }
     }
 
     fn setup(&mut self, wake: Waker) {
         let cache = Arc::new(ImageCache::new(wake));
         self.assets = Some(view::Artwork::load(cache));
+        let paths = self.paths.clone();
+        self.background(move || Message::HardwareLoaded(paths.list_hardware()));
+        self.checking_update = true;
+        let update_paths = self.paths.clone();
+        self.background(move || {
+            Message::UpdateChecked(update_paths.check_update(env!("CARGO_PKG_VERSION")), false)
+        });
+        #[cfg(windows)]
+        start_gamepad_poller(self.handle.clone(), self.playing_flag.clone());
         if !self.source.text.is_empty() {
             self.busy = true;
-            self.report("Checking Game Source…", false);
+            self.report("Loading Cars 3: Driven to Win…", false);
             self.inspect(self.source.text.clone(), false);
         }
     }
@@ -156,8 +256,47 @@ impl App {
     }
 
     fn report(&mut self, message: impl Into<String>, error: bool) {
-        self.status = message.into();
-        self.error = error;
+        let text = message.into();
+        if error {
+            self.push_toast("Operation Failed", Some(text), true, false);
+            if self.status.is_empty() || self.busy {
+                self.status = "Ready to Play".into();
+            }
+            self.error = false;
+        } else {
+            self.status = text;
+            self.error = false;
+        }
+    }
+
+    fn push_toast(
+        &mut self,
+        title: impl Into<String>,
+        detail: Option<String>,
+        error: bool,
+        crash_action: bool,
+    ) {
+        self.toast_seq += 1;
+        let id = self.toast_seq;
+        self.toast = Some(ToastNotice {
+            id,
+            title: title.into(),
+            detail,
+            error,
+            crash_action,
+        });
+        let secs = if crash_action {
+            10
+        } else if error {
+            6
+        } else {
+            4
+        };
+        let handle = self.handle.clone();
+        let _ = rune::task::spawn("PistonPort toast timer", move || {
+            std::thread::sleep(std::time::Duration::from_secs(secs));
+            handle.update(move |state, tx| state.update(Message::DismissToast(id), tx));
+        });
     }
 
     fn dirty(&mut self) {
@@ -326,6 +465,10 @@ impl App {
                     self.open_trophies();
                 }
             }
+            Message::SettingsTab(tab) => {
+                self.settings_tab = tab;
+                self.menu = None;
+            }
             Message::Pick(kind) if !self.busy => self.choose(kind),
             Message::Picked(kind, picked) => {
                 self.busy = false;
@@ -348,9 +491,48 @@ impl App {
                             self.saved_source = path.clone();
                             self.set_source_info(&path, Some(inspection));
                             self.page = Page::Garage;
+                            if let Ok(start) = std::env::var("PISTONPORT_START_PAGE") {
+                                match start.as_str() {
+                                    "settings" | "settings:graphics" => {
+                                        self.page = Page::Settings;
+                                        self.settings_tab = SettingsTab::Graphics;
+                                    }
+                                    "settings:upscaling" => {
+                                        self.page = Page::Settings;
+                                        self.settings_tab = SettingsTab::Upscaling;
+                                    }
+                                    "settings:gameplay" => {
+                                        self.page = Page::Settings;
+                                        self.settings_tab = SettingsTab::Gameplay;
+                                    }
+                                    "settings:system" => {
+                                        self.page = Page::Settings;
+                                        self.settings_tab = SettingsTab::System;
+                                    }
+                                    "saves" => self.page = Page::Saves,
+                                    "controls" => self.page = Page::Controls,
+                                    "trophies" => {
+                                        self.page = Page::Trophies;
+                                        self.open_trophies();
+                                    }
+                                    _ => {}
+                                }
+                            }
                             self.report("Ready to Play", false);
+                            if let Ok(test_toast) = std::env::var("PISTONPORT_TEST_TOAST")
+                                && !test_toast.is_empty()
+                            {
+                                self.push_toast(
+                                    "Game Exited With an Error",
+                                    Some(test_toast),
+                                    true,
+                                    true,
+                                );
+                            }
                         }
-                        Err(error) => self.report(error, true),
+                        Err(error) => {
+                            self.push_toast("Invalid Game Source", Some(error), true, false);
+                        }
                     }
                 } else if picked {
                     self.busy = false;
@@ -363,7 +545,10 @@ impl App {
                                 self.open_trophies();
                             }
                         }
-                        Err(error) => self.report(error, true),
+                        Err(error) => {
+                            tx.animated();
+                            self.push_toast("Invalid Game Source", Some(error), true, false);
+                        }
                     }
                 } else if self.source.text == path
                     && let Ok(inspection) = result
@@ -371,12 +556,139 @@ impl App {
                     self.set_source_info(&path, Some(inspection));
                 }
             }
+            Message::HardwareLoaded(info) => {
+                self.hardware = info;
+            }
+            Message::CheckUpdate if !self.checking_update => {
+                self.checking_update = true;
+                self.report("Checking GitHub Releases…", false);
+                let paths = self.paths.clone();
+                self.background(move || {
+                    Message::UpdateChecked(paths.check_update(env!("CARGO_PKG_VERSION")), true)
+                });
+            }
+            Message::UpdateChecked(result, manual) => {
+                self.checking_update = false;
+                if let Ok(info) = &result {
+                    if info.available {
+                        tx.animated();
+                        self.report(format!("Update Available: {}", info.tag), false);
+                        if manual {
+                            self.push_toast(
+                                format!("Update Available: {}", info.tag),
+                                Some(info.title.clone()),
+                                false,
+                                false,
+                            );
+                        }
+                    } else if manual {
+                        tx.animated();
+                        let msg = format!("PistonPort is Up to Date (v{})", env!("CARGO_PKG_VERSION"));
+                        self.report(msg.clone(), false);
+                        self.push_toast(msg, Some(format!("Latest release: {}", info.tag)), false, false);
+                    }
+                } else if let (true, Err(error)) = (manual, &result) {
+                    tx.animated();
+                    self.push_toast("Update Check Unavailable", Some(error.clone()), true, false);
+                }
+                self.update_info = Some(result);
+            }
+            Message::OpenUpdateUrl(url) => {
+                if let Err(error) = profile::open_url(&url) {
+                    tx.animated();
+                    self.push_toast("Could Not Open Browser", Some(error), true, false);
+                } else {
+                    self.report("Opened GitHub Release Page", false);
+                }
+            }
+            Message::OpenCoffee => {
+                if let Err(error) = profile::open_url("https://afkarxyz.gumroad.com/coffee") {
+                    tx.animated();
+                    self.push_toast("Could Not Open Browser", Some(error), true, false);
+                } else {
+                    self.report("Opened Buy Me a Coffee Page", false);
+                }
+            }
+            Message::Preset(preset) if !self.busy => {
+                self.settings.apply_preset(preset);
+                let label = match preset {
+                    Preset::Handheld => "Applied Handheld Preset (Unsaved)",
+                    Preset::Balanced => "Applied Balanced Preset (Unsaved)",
+                    Preset::HighRefresh => "Applied High Refresh Preset (Unsaved)",
+                    Preset::Ultra => "Applied Ultra Preset (Unsaved)",
+                };
+                self.report(label, false);
+            }
             Message::Mode(value) if !self.busy => {
                 self.settings.mode = value;
                 self.dirty();
             }
-            Message::Size(value) if !self.busy && self.settings.mode.0 == "windowed" => {
+            Message::Size(value) if !self.busy => {
                 self.settings.size = value;
+                self.dirty();
+            }
+            Message::Shadow(value) if !self.busy => {
+                self.settings.shadow = value;
+                self.dirty();
+            }
+            Message::Anisotropy(value) if !self.busy => {
+                self.settings.anisotropy = value;
+                self.dirty();
+            }
+            Message::MotionBlur(value) if !self.busy => {
+                self.settings.motion_blur = value;
+                self.dirty();
+            }
+            Message::Bloom(value) if !self.busy => {
+                self.settings.bloom = value;
+                self.dirty();
+            }
+            Message::Fov(value) if !self.busy => {
+                self.settings.fov = value;
+                self.dirty();
+            }
+            Message::SkipIntro(value) if !self.busy => {
+                self.settings.skip_intro = value;
+                self.dirty();
+            }
+            Message::HighLod(value) if !self.busy => {
+                self.settings.high_lod = value;
+                self.dirty();
+            }
+            Message::Fsr1(value) if !self.busy => {
+                self.settings.fsr1 = value;
+                self.dirty();
+            }
+            Message::Rcas(value) if !self.busy => {
+                self.settings.rcas = value;
+                self.dirty();
+            }
+            Message::RcasStrength(value) if !self.busy => {
+                self.settings.rcas_strength = value;
+                self.dirty();
+            }
+            Message::AsyncShaders(value) if !self.busy => {
+                self.settings.async_shaders = value;
+                self.dirty();
+            }
+            Message::Vibration(value) if !self.busy => {
+                self.settings.vibration = value;
+                self.dirty();
+            }
+            Message::GlyphStyle(value) if !self.busy => {
+                self.settings.glyph_style = value;
+                self.dirty();
+            }
+            Message::Gpu(value) if !self.busy => {
+                self.settings.gpu_id = value;
+                self.dirty();
+            }
+            Message::Monitor(value) if !self.busy => {
+                self.settings.monitor = value;
+                self.dirty();
+            }
+            Message::Compat(value) if !self.busy => {
+                self.settings.compat = value;
                 self.dirty();
             }
             Message::Rate(value) if !self.busy => {
@@ -411,12 +723,25 @@ impl App {
                 self.pad = DEFAULT_PAD;
                 self.dirty();
             }
+            Message::ResetSettings if !self.busy => {
+                self.settings = Settings::default();
+                self.report("Default Settings Restored (Unsaved)", false);
+                self.push_toast(
+                    "Default Settings Restored",
+                    Some("Click Save Settings to persist the default configuration.".into()),
+                    false,
+                    false,
+                );
+            }
             Message::Save if !self.busy => self.commit(false),
             Message::Play if !self.busy => self.commit(true),
             Message::Commit(source, result, play) => {
                 self.busy = false;
                 match result {
-                    Err(error) => self.report(error, true),
+                    Err(error) => {
+                        tx.animated();
+                        self.push_toast("Could Not Save Settings", Some(error), true, false);
+                    }
                     Ok(inspection) => {
                         if source != self.saved_source || play {
                             self.set_source_info(&source, inspection);
@@ -424,9 +749,14 @@ impl App {
                         self.source = TextEdit::new(&source);
                         self.saved_source = source.clone();
                         self.report("Settings Saved", false);
+                        if !play {
+                            tx.animated();
+                            self.push_toast("Settings Saved", None, false, false);
+                        }
                         if play {
                             self.busy = true;
                             self.playing = true;
+                            self.playing_flag.store(true, Ordering::Relaxed);
                             self.report("Game Running", false);
                             let paths = self.paths.clone();
                             self.minimize(tx);
@@ -441,35 +771,178 @@ impl App {
             Message::SelectSlot(slot) if !self.busy && slot.id != self.selected.id => {
                 self.save_action("--select", PathBuf::from(slot.id), false);
             }
+            Message::ExportSave(slot) if !self.busy => {
+                self.menu = None;
+                self.busy = true;
+                let default_name = format!(
+                    "PistonPort-{}.zip",
+                    slot.label
+                        .chars()
+                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                        .collect::<String>()
+                        .trim_matches('-')
+                );
+                self.background(move || {
+                    let picked = FileDialog::new()
+                        .set_title("Export Cars 3 Save Archive")
+                        .set_file_name(&default_name)
+                        .add_filter("Cars 3 Save ZIP", &["zip"])
+                        .save_file();
+                    Message::ExportPicked(slot, picked)
+                });
+            }
+            Message::ExportPicked(slot, picked) => {
+                if let Some(dest) = picked {
+                    let paths = self.paths.clone();
+                    self.report("Exporting Save…", false);
+                    self.background(move || {
+                        let result = paths.export_save(&slot.id, &dest).map(|_| dest);
+                        Message::ExportDone(result)
+                    });
+                } else {
+                    self.busy = false;
+                }
+            }
+            Message::ExportDone(result) => {
+                self.busy = false;
+                tx.animated();
+                match result {
+                    Ok(path) => {
+                        let name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("ZIP archive")
+                            .to_owned();
+                        self.report(format!("Exported Save to {name}"), false);
+                        self.push_toast("Save Exported", Some(name), false, false);
+                    }
+                    Err(error) => {
+                        self.push_toast("Could Not Export Save", Some(error), true, false);
+                    }
+                }
+            }
             Message::SaveDone(result, imported) => {
                 self.busy = false;
+                tx.animated();
                 (self.slots, self.selected) = profile::slots(&self.paths.profile);
                 self.refresh_trophy_progress();
                 match result {
-                    Ok(_) => self.report(
-                        if imported {
+                    Ok(_) => {
+                        let msg = if imported {
                             "Imported Save Selected"
                         } else {
                             "Save Slot Selected"
-                        },
-                        false,
-                    ),
-                    Err(error) => self.report(error, true),
+                        };
+                        self.report(msg, false);
+                        self.push_toast(
+                            msg,
+                            Some(self.selected.label.clone()),
+                            false,
+                            false,
+                        );
+                    }
+                    Err(error) => {
+                        self.push_toast("Save Slot Error", Some(error), true, false);
+                    }
                 }
             }
             Message::TrophiesLoaded(source, result) if source == self.trophies.source => {
+                tx.animated();
                 self.trophies.catalog = Some(result);
+            }
+            Message::OpenLog => {
+                if let Err(error) = self.paths.open_log() {
+                    tx.animated();
+                    self.push_toast("Could Not Open Log", Some(error), true, false);
+                } else {
+                    self.report("Opened native-last.log", false);
+                }
+            }
+            Message::CopyCrashReport if !self.busy => {
+                self.busy = true;
+                self.report("Preparing Crash Report…", false);
+                let paths = self.paths.clone();
+                self.background(move || {
+                    let result = paths
+                        .crash_report()
+                        .and_then(|report| profile::copy_to_clipboard(&report));
+                    Message::ReportCopied(result)
+                });
+            }
+            Message::ReportCopied(result) => {
+                self.busy = false;
+                tx.animated();
+                match result {
+                    Ok(()) => {
+                        self.report("Crash Report Copied to Clipboard", false);
+                        self.push_toast(
+                            "Crash Report Copied",
+                            Some("System specs, settings, and log details are on your clipboard.".into()),
+                            false,
+                            false,
+                        );
+                    }
+                    Err(error) => {
+                        self.push_toast("Could Not Copy Crash Report", Some(error), true, false);
+                    }
+                }
+            }
+            Message::DismissToast(id) => {
+                if self.toast.as_ref().is_some_and(|t| t.id == id) {
+                    tx.animated();
+                    self.toast = None;
+                }
+            }
+            Message::Gamepad(action) if !self.busy && self.page != Page::Welcome => {
+                let order = [
+                    Page::Garage,
+                    Page::Saves,
+                    Page::Settings,
+                    Page::Controls,
+                    Page::Trophies,
+                ];
+                match action {
+                    GamepadAction::PrevTab | GamepadAction::NextTab => {
+                        if let Some(pos) = order.iter().position(|p| *p == self.page) {
+                            let next = if matches!(action, GamepadAction::NextTab) {
+                                (pos + 1) % order.len()
+                            } else {
+                                (pos + order.len() - 1) % order.len()
+                            };
+                            self.update(Message::Page(order[next]), tx);
+                        }
+                    }
+                    GamepadAction::Confirm => {
+                        if self.page == Page::Garage {
+                            self.commit(true);
+                        } else if matches!(self.page, Page::Settings | Page::Controls) {
+                            self.commit(false);
+                        }
+                    }
+                    GamepadAction::Back => {
+                        if self.menu.is_some() {
+                            self.menu = None;
+                        } else if self.page != Page::Garage {
+                            self.update(Message::Page(Page::Garage), tx);
+                        }
+                    }
+                }
             }
             Message::GameDone(result) => {
                 self.busy = false;
                 self.playing = false;
+                self.playing_flag.store(false, Ordering::Relaxed);
                 self.settings = Settings::load(&self.paths.profile);
                 self.pad = load_bindings(&self.paths.profile.join("controller.map"));
                 (self.slots, self.selected) = profile::slots(&self.paths.profile);
                 self.refresh_trophy_progress();
                 match result {
                     Ok(_) => self.report("Ready to Play", false),
-                    Err(error) => self.report(error, true),
+                    Err(error) => {
+                        tx.animated();
+                        self.report("Ready to Play", false);
+                        self.push_toast("Game Exited With an Error", Some(error), true, true);
+                    }
                 }
                 self.handle.open();
             }
@@ -624,8 +1097,105 @@ fn center_window(window: &rune::WindowHandle) {
     });
 }
 
+#[cfg(windows)]
+fn start_gamepad_poller(handle: AppHandle<App>, playing: Arc<AtomicBool>) {
+    use std::ffi::c_void;
+    use std::time::Duration;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct XInputGamepad {
+        buttons: u16,
+        left_trigger: u8,
+        right_trigger: u8,
+        thumb_lx: i16,
+        thumb_ly: i16,
+        thumb_rx: i16,
+        thumb_ry: i16,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct XInputState {
+        packet_number: u32,
+        gamepad: XInputGamepad,
+    }
+
+    unsafe extern "system" {
+        fn LoadLibraryA(name: *const u8) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const u8) -> *const c_void;
+    }
+
+    type GetStateFn = unsafe extern "system" fn(u32, *mut XInputState) -> u32;
+
+    let _ = std::thread::Builder::new()
+        .name("PistonPort gamepad".into())
+        .spawn(move || {
+            let get_state: GetStateFn = unsafe {
+                let mut module = LoadLibraryA(c"xinput1_4.dll".as_ptr().cast());
+                if module.is_null() {
+                    module = LoadLibraryA(c"xinput9_1_0.dll".as_ptr().cast());
+                }
+                if module.is_null() {
+                    return;
+                }
+                let symbol = GetProcAddress(module, c"XInputGetState".as_ptr().cast());
+                if symbol.is_null() {
+                    return;
+                }
+                std::mem::transmute(symbol)
+            };
+            let mut prev = [0u16; 4];
+            loop {
+                std::thread::sleep(Duration::from_millis(50));
+                if playing.load(Ordering::Relaxed) {
+                    prev = [0u16; 4];
+                    continue;
+                }
+                for (slot, previous) in prev.iter_mut().enumerate() {
+                    let mut state = XInputState::default();
+                    let status = unsafe { get_state(slot as u32, &mut state) };
+                    if status != 0 {
+                        *previous = 0;
+                        continue;
+                    }
+                    let buttons = state.gamepad.buttons;
+                    let pressed = buttons & !*previous;
+                    *previous = buttons;
+                    let action = if pressed & 0x0100 != 0 {
+                        Some(GamepadAction::PrevTab)
+                    } else if pressed & 0x0200 != 0 {
+                        Some(GamepadAction::NextTab)
+                    } else if pressed & (0x1000 | 0x0010) != 0 {
+                        Some(GamepadAction::Confirm)
+                    } else if pressed & 0x2000 != 0 {
+                        Some(GamepadAction::Back)
+                    } else {
+                        None
+                    };
+                    if let Some(action) = action {
+                        handle.update(move |app, tx| app.update(Message::Gamepad(action), tx));
+                    }
+                }
+            }
+        });
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = Paths::discover()?;
+    let direct_play = std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--play" || arg == "--launch");
+    if direct_play {
+        let source = profile::read(&paths.profile.join("game-folder.txt"));
+        if !source.is_empty() {
+            let _ = paths.migrate_retired_save_selection();
+            return match paths.play(&source) {
+                Ok(_) => Ok(()),
+                Err(error) => Err(error.into()),
+            };
+        }
+    }
     let instance = fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -653,8 +1223,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         center_window(window);
         *remember_window.borrow_mut() = Some(window.clone());
     });
+    let mut rune_args: Vec<String> = std::env::args().skip(1).collect();
+    if !rune_args.iter().any(|arg| arg == "--scroll-bars") {
+        rune_args.push("--scroll-bars".into());
+        rune_args.push("always".into());
+    }
     let handle = app.handle();
-    app.init(move || App::open(paths, handle, native_window))
+    app.args(rune_args)
+        .init(move || App::open(paths, handle, native_window))
         .window_options(WindowOptions {
             borderless: true,
             ..WindowOptions::default()

@@ -4,15 +4,26 @@ PistonPort runs *Cars 3: Driven to Win* for PS4 on Windows x64. This port suppor
 
 ## Playing
 
-Extract the Windows ZIP and open PistonPort.exe with PistonPort.Runtime beside it. Select a playable PS4 PKG or an extracted folder containing eboot.bin on the welcome screen. Click **Play** in Garage to prepare the native image and start the game. Use **Settings → Game Source** to change the location afterward. [Player guide](launcher/QUICKSTART.md)
+Extract the Windows ZIP and open `PistonPort.exe` with `PistonPort.Runtime` beside it. Select a playable PS4 PKG or an extracted folder containing `eboot.bin` on the welcome screen. Click **Play** in Garage to prepare the native image and start the game. Use **Settings → Source & Updates** to change the location or check for new releases afterward. [Player guide](launcher/QUICKSTART.md)
 
-The standalone launcher uses %LOCALAPPDATA%\PistonPort. Set PISTONPORT_PROFILE to select another location. Uji Native.cmd uses the selected game folder and the local dist build.
+The standalone launcher uses `%LOCALAPPDATA%\PistonPort`. Set `PISTONPORT_PROFILE` to select another location. Pass `PistonPort.exe --play` (or `--launch`) to jump straight into the game from Steam Big Picture, Playnite, or ROG Ally Armoury Crate SE without opening the launcher window. In the launcher, XInput controllers can switch tabs with **LB/RB**, launch with **A/Start** on Garage, and go back with **B**.
+
+## Graphics, Ultrawide & Handheld Support
+
+* **Quick Presets**: One-click **Handheld (720p)**, **Balanced (1080p)**, **High Refresh (1440p)**, and **Ultra (4K)** presets in **Settings → Display & Graphics**.
+* **Internal Render Resolution & Ultrawide HUD**: True internal resolution patching (`720p`, `1280×800` 16:10 Steam Deck, `900p`, `1080p`, `2560×1080` 21:9, `1440p`, `3440×1440` 21:9, `3840×1600` 21:9, `5120×1440` 32:9, and `4K`) in Windowed, Borderless, and Fullscreen modes, with Hor+ 3D aspect-ratio scaling, automatic GPU Data heap expansion, and a **centered 16:9 Scaleform HUD** so menus and button prompts stay 1:1 proportional instead of stretching on ultrawide displays.
+* **Shadow Resolution & LOD**: Shadow map scaling (`1024`, `2048`, `3072`, `4096`) and a **Force High LOD** toggle to reduce pop-in.
+* **Motion Blur & Bloom Toggles**: Fixes Octane's high-FPS shutter multiplier (`42.0 / dt_ms`) that caused 4× over-blurred cars at 120 FPS (Off by default), plus a **Bloom** toggle (`On / Off`) that zeroes Octane's bloom weights to remove glow artifacts on moving cars.
+* **Anisotropic Filtering, FSR 1 + RCAS, Async Shaders**: Configurable AF (`Game Default`–`16x`, default `16x`), FSR 1 upscaling, RCAS sharpening (`0%`–`100%`), and async shader compilation.
+* **Camera FOV & Skip Intro Logos**: Adjustable gameplay camera FOV (`100%`–`130%`) and an optional **Skip Intro Logos** toggle.
+* **AMD / Handheld Compatibility**: Uses the signed Windows System32 Vulkan loader (no bundled `vulkan-1.dll`), automatically enables `Safe (AMD / Handheld)` paths + commit-on-map memory allocation on AMD-only / ≤ 20 GiB RAM handhelds (such as ASUS ROG Ally Z1 Extreme), and lets you choose the Vulkan **GPU Adapter** and **Monitor** directly in **Settings → Upscaling & Hardware**.
+* **Diagnostics & Updates**: Built-in GitHub release checker in **Settings → Source & Updates**, Rune toast notifications for status/errors with an inline **Copy Crash Report** action on unexpected game exits, plus **Open Log** and **Copy Report** tools.
 
 ## Save Slots
 
-In **Saves**, select **Use My Progress** to start or continue your own game. **Import Save…** creates a separate slot from a decrypted CUSA07027 ZIP or its P0 file. The built-in **All Skill Checks** save includes Smokey and 136/136 Skill Checks. It creates a writable copy on first use.
+In **Saves**, select **Use My Progress** to start or continue your own game. **Import Save…** creates a separate slot from a decrypted `CUSA07027` ZIP or its `P0` file, and **Export…** backs up any slot into a re-importable ZIP archive. The built-in **All Skill Checks** save includes Smokey and 136/136 Skill Checks. It creates a writable copy on first use.
 
-The built-in save also includes completed skill counters, gold event and cup results, and 22 local PS4 trophies in PistonPort's **F8** overlay.
+The built-in save also includes completed skill counters, gold event and cup results, and 22 local PS4 trophies in PistonPort's rethemed **F8 / R3+R2** in-game overlay.
 
 ## Frame pacing
 

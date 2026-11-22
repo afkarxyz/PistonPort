@@ -212,6 +212,39 @@ def import_save(profile, source):
     return slot
 
 
+def export_save(profile, slot, destination):
+    """Export a save slot as a re-importable PistonPort ZIP archive."""
+    if slot in BUILTIN_SAVES and not (profile / "save-slots" / slot).exists():
+        create_slot(profile, Path(__file__).with_name("saves") / BUILTIN_SAVES[slot], slot)
+    root = slot_root(profile, slot)
+    body = root / "savedata/1" / TITLE / TITLE
+    if not (body / "P0").is_file():
+        raise ValueError("This save slot has no saved progress to export yet.")
+    meta = body.with_name(TITLE + ".sce_sys")
+    param = meta / "param.bin"
+    if not param.is_file() or param.stat().st_size != 1328:
+        raise ValueError("Save metadata (param.bin) is missing for this save slot.")
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destination.with_name(f"{destination.name}.{os.getpid()}.tmp")
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            for item in sorted(body.iterdir()):
+                if item.is_file() and PAYLOAD.fullmatch(item.name):
+                    archive.write(item, f"{TITLE}/{item.name}")
+            archive.write(param, f"{TITLE}.sce_sys/param.bin")
+            icon = meta / "icon0.png"
+            if icon.is_file():
+                archive.write(icon, f"{TITLE}.sce_sys/icon0.png")
+            trophies = root / "trophies.dat"
+            if trophies.is_file() and trophies.stat().st_size == 16:
+                archive.write(trophies, "trophies.dat")
+        os.replace(tmp, destination)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return destination
+
+
 if __name__ == "__main__":
     import msvcrt
     parser = argparse.ArgumentParser()
@@ -219,6 +252,7 @@ if __name__ == "__main__":
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--import-save", type=Path)
     action.add_argument("--select")
+    action.add_argument("--export-save", nargs=2, metavar=("SLOT", "DEST"))
     args = parser.parse_args()
     try:
         profile = args.profile.resolve()
@@ -231,6 +265,9 @@ if __name__ == "__main__":
                 raise ValueError("Close the game before changing saves.")
             if args.import_save:
                 print(import_save(profile, args.import_save.resolve()))
+            elif args.export_save:
+                slot_id, dest = args.export_save
+                print(export_save(profile, slot_id, Path(dest).resolve()))
             else:
                 select(profile, args.select)
     except (ValueError, OSError, zipfile.BadZipFile, RuntimeError, OverflowError) as e:

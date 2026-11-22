@@ -4,21 +4,29 @@
 2. Open `PistonPort.exe`. On the welcome screen, use **Choose PKG…** for a playable PS4 package or **Choose Folder…** for a dump containing `eboot.bin`. The launcher saves the source and opens Garage. Click **Play** to start. Supported version is **Cars 3: Driven to Win, CUSA07027, 01.00**.
 3. PKG mode streams track, character and audio assets from the selected file. Keep the PKG at that location while playing. First launch temporarily stages the executable and three modules to prepare a roughly 28 MiB native image in your profile. Later launches verify and reuse it. Session metadata is removed after a normal exit. Both sources use the same save profile.
 
-**Settings → Game Source** shows the selected game's PS4 Title ID and app version. Use it to change a source after setup.
+**Settings → Source & Updates** shows the selected game's PS4 Title ID and app version, lets you change the source after setup, and checks GitHub for newer PistonPort releases.
 
 ## Playing
 
-Open **Saves** and select **Use My Progress** to start or continue a game with your own progress. Use **Import Save…** for a decrypted CUSA07027 ZIP or the **P0** file in its save folder. Each import gets its own slot. **All Skill Checks** is the built-in save with Smokey unlocked and 136/136 Skill Checks. The launcher creates a writable copy on first use.
+Open **Saves** and select **Use My Progress** to start or continue a game with your own progress. Use **Import Save…** for a decrypted CUSA07027 ZIP or the **P0** file in its save folder, and **Export…** beside any slot to back up your progress and trophies as a re-importable ZIP. **All Skill Checks** is the built-in save with Smokey unlocked and 136/136 Skill Checks. The launcher creates a writable copy on first use.
 
-The built-in save includes completed skill counters, gold event and cup results, and all 22 offline trophies. Press **F8** in-game to view them with the original English names and grades read from the game.
+The built-in save includes completed skill counters, gold event and cup results, and all 22 offline trophies. Press **F8** (or **R3 + R2** on a controller) in-game to open the Trophy & Notifications overlay with the original English names and grades read from the game.
 
 Open **Trophies** in the launcher to see each trophy's name, tier, and status. When you import a save, PistonPort restores local trophies from the game's saved achievement flags and statistics. To restore trophies for a previously imported save, switch away from that slot and select it again.
 
 Choose **Events → Race → Fireball Beach Sprint** after the tutorial. **F** accelerates, **A/D** steers and **E** boosts. **Space** selects and **Left Shift** goes back. The Controls tab lists the keyboard, DualShock, and Xbox inputs side by side. Change the mapping in the DualShock column to see the equivalent Xbox input. Picking an occupied button swaps the two bindings. Select **Save Controls** to apply the mapping on your next launch.
 
-Frame limits are **30, 60, 100, 120, 144, 180, 240**, and **Unlimited**. The default is 60. To measure maximum throughput, select Unlimited and turn off VSync. Show Frame Rate displays the counter in the game. Insert opens the in-game panel.
+## Graphics, Ultrawide & Handheld Tips
 
-**Settings → In Game → Show Keyboard Hints** shows the Controls tab's DualShock icons beside their assigned keys during play. You can also toggle it in the in-game panel with **Insert**.
+* **Quick Presets**: Pick **Handheld (720p)**, **Balanced (1080p)**, **High Refresh (1440p)**, or **Ultra (4K)** at the top of **Settings → Display & Graphics**, then click **Save Settings**.
+* **Resolution, Ultrawide & Shadows**: Choose from `720p`, `1280×800` (16:10), `900p`, `1080p`, `2560×1080` / `3440×1440` / `3840×1600` (21:9 Hor+ with centered 16:9 HUD), `5120×1440` (32:9 Hor+ with centered 16:9 HUD), or `4K`, plus **Shadow Resolution** (`1024`–`4096`), **Anisotropic Filtering** (`Game Default`–`16x`), **Camera FOV** (`100%`–`130%`), **Force High LOD**, and **Skip Intro Logos**.
+* **High-FPS Motion Blur & Bloom**: **Motion Blur** is Off by default for crisp high-FPS racing (turning it On uses the fixed shutter scale without 120 FPS over-blur). If you see bloom/glow artifacts on moving cars, toggle **Bloom** to **Off**.
+* **FSR 1 + RCAS & Async Shaders**: Found under **Settings → Upscaling & Hardware**; recommended for handhelds rendering at `720p`/`900p` on a `1080p` display.
+* **ROG Ally / AMD Handhelds**: Leave **GPU Compatibility** on **Auto** (or pick **Safe (AMD / Handheld)**). You can also launch straight into the game from Steam Big Picture / Playnite / Armoury Crate SE with `PistonPort.exe --play`.
+* **Controller & Audio**: Under **Settings → Gameplay & Audio**, configure **Button Prompts** (Auto / PlayStation / Xbox / Nintendo / Keyboard), **Controller Vibration** (`0%`–`100%`), **Master Volume**, and **Show Keyboard Hints**.
+* **Troubleshooting**: Click **Open Log** or **Copy Report** in **Settings → Source & Updates** (or **Copy Crash Report** in the toast notification if the game exits unexpectedly) to grab your system info and `native-last.log`.
+
+Frame limits are **30, 60, 100, 120, 144, 180, 240**, and **Unlimited**. The default is 60. To measure maximum throughput, select Unlimited and turn off VSync. **Show Frame Rate** displays the counter in-game.
 
 Saves, settings, first-launch images and `native-last.log` are stored in `%LOCALAPPDATA%\PistonPort` on a standalone installation. Set `PISTONPORT_PROFILE` to choose another profile location. Keep a backup of your saves when moving between PCs.
 

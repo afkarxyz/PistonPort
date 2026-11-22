@@ -74,6 +74,9 @@ try {
         foreach ($line in $imports) {
             if ($line -notmatch '^\s*Name: ([^\\/]+\.dll)\s*$') { continue }
             $name = $matches[1]
+            # Always use the OS Vulkan loader from System32 so GPU vendor ICDs
+            # and implicit layers (e.g. AMD Adrenalin / ROG Ally) load cleanly.
+            if ($name -ieq 'vulkan-1.dll') { continue }
             $library = Join-Path $ToolBin $name
             if ($seen.ContainsKey($name) -or !(Test-Path -LiteralPath $library)) { continue }
             $seen[$name] = $true

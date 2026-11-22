@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
 use rune::{
-    Align, Cx, El, Icon, Image, ImageCache, ScrollSpec, SurfaceFit, TextStyle, col, el, row, text,
+    Align, Cx, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair, SurfaceFit,
+    TextStyle, Transition, col, el, row, text,
 };
 use rune_kit::{
-    Button, ButtonVariant, ControlSize, IconButton, Kit, Placement, Select, SelectAppearance,
-    Switch, TextInput,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, Loader, Placement,
+    ScrollBar, Select, SelectAppearance, Switch, TextInput, Toast, ToastRegion,
 };
 
 use crate::icons;
-use crate::profile::{MODES, RATES, SIZES, Slot};
+use crate::profile::{
+    ANISOTROPIES, COMPAT_MODES, FOV_SCALES, GLYPH_STYLES, MODES, Preset, RATES, SHADOW_SIZES,
+    SIZES, Slot,
+};
 use crate::trophy_data::{Tier, tier_color};
-use crate::{App, DEFAULT_PAD, Message, Page, Picker};
+use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab};
 
 const ICON: &[u8] = include_bytes!("../../../../pistonport/launcher/pistonport.png");
 const DUALSHOCK_STICK: &[u8] = include_bytes!("../../../assets/pads/dualshock4/leftstick.png");
@@ -106,6 +110,10 @@ impl Artwork {
     }
 }
 
+fn enter_only(transition: Transition) -> Transition {
+    transition.springs(SpringPair::new(Spring::new(0.2, 0.0), Spring::NONE))
+}
+
 fn body(kit: &Kit, value: impl Into<String>) -> El {
     text(value).font(kit.ty.ui).color(kit.c.text_base)
 }
@@ -154,7 +162,13 @@ fn action(
 
 fn caption(kit: &Kit, key: &str, label: &str, glyph: &'static Icon, message: Message) -> El {
     let danger = matches!(message, Message::Close);
+    let muted_icon = matches!(message, Message::OpenCoffee);
     let button = IconButton::new(glyph)
+        .variant(if muted_icon {
+            IconButtonVariant::GhostMuted
+        } else {
+            IconButtonVariant::Neutral
+        })
         .control_size(ControlSize::Large)
         .label(label)
         .on_press_tx(move |app: &mut App, tx| app.update(message.clone(), tx))
@@ -169,9 +183,15 @@ fn caption(kit: &Kit, key: &str, label: &str, glyph: &'static Icon, message: Mes
 
 pub fn view(app: &App, _: &mut Cx<App>) -> El {
     let mut kit = Kit::neutral(true);
+    // Give neutral buttons and dropdown triggers a smooth elevated fill without harsh borders.
+    kit.c.bg_button_neutral = rune::color::hex("#2a2d34").unwrap_or(kit.c.bg_button_neutral);
+    kit.c.hover = rune::Color::WHITE.alpha(0.08);
+    kit.c.pressed = rune::Color::WHITE.alpha(0.14);
+    kit.elevation.button_neutral = Vec::new();
     kit.glyph.chevron_down = &icons::CHEVRON_DOWN;
     kit.glyph.chevron_up = &icons::CHEVRON_UP;
     kit.glyph.check_small = &icons::CHECK;
+    kit.glyph.close = &icons::CLOSE;
     let mut overlays = Vec::new();
     let assets = app.assets.as_ref();
     let brand = row()
@@ -183,16 +203,38 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
             text("PistonPort")
                 .font(TextStyle::new(18.0, 650.0))
                 .color(kit.c.text_base),
-        );
+        )
+        .child(muted(&kit, concat!("v", env!("CARGO_PKG_VERSION"))));
     let mut header = row()
         .key("header")
         .h(52.0)
         .px(18.0)
-        .gap(7.0)
+        .gap(8.0)
         .fill(kit.c.layer_01)
         .center_y()
-        .child(brand)
-        .child(el().grow(1.0).h_full().window_drag());
+        .child(brand);
+    if let Some(Ok(update)) = &app.update_info
+        && update.available
+    {
+        let url = update.url.clone();
+        let pill = Button::new(format!("Update {}", update.tag))
+            .icon(&icons::UPLOAD)
+            .variant(ButtonVariant::Contrast)
+            .on_press_tx(move |app: &mut App, tx| {
+                if app.page == Page::Settings && app.settings_tab == SettingsTab::System {
+                    app.update(Message::OpenUpdateUrl(url.clone()), tx);
+                } else {
+                    app.page = Page::Settings;
+                    app.settings_tab = SettingsTab::System;
+                    app.menu = None;
+                }
+            })
+            .build(&kit)
+            .key("header-update-pill")
+            .transition(Transition::scale(0.92).combined(Transition::opacity()));
+        header = header.child(pill);
+    }
+    header = header.child(el().grow(1.0).h_full().window_drag());
     if app.page != Page::Welcome {
         let tabs = [
             ("Garage", "garage", &icons::FLAG, Page::Garage),
@@ -217,6 +259,16 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
             .child(el().grow(1.0).h_full().window_drag());
     }
     header = header
+        .child(
+            caption(
+                &kit,
+                "buy-coffee",
+                "Buy Me a Coffee",
+                &icons::COFFEE,
+                Message::OpenCoffee,
+            )
+            .help("Buy Me a Coffee"),
+        )
         .child(caption(
             &kit,
             "minimize",
@@ -240,6 +292,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         Page::Trophies => trophies(app, &kit),
     };
     let mut shell = col()
+        .key("shell")
         .w_full()
         .h_full()
         .fill(kit.c.bg_base)
@@ -248,6 +301,31 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .child(page);
     if app.page != Page::Welcome {
         shell = shell.child(footer(app, &kit, &mut overlays));
+    }
+    if let Some(notice) = &app.toast {
+        let id = notice.id;
+        let lead = if notice.error {
+            rune::icon(&icons::ALERT, 16.0).color(kit.c.danger.fg)
+        } else {
+            rune::icon(&icons::CHECK, 16.0).color(kit.c.success.fg)
+        };
+        let mut toast = Toast::new(format!("toast-{id}"), &notice.title)
+            .lead(lead)
+            .on_close(move |app: &mut App| {
+                if app.toast.as_ref().is_some_and(|t| t.id == id) {
+                    app.toast = None;
+                }
+            });
+        if let Some(detail) = &notice.detail {
+            toast = toast.description(detail);
+        }
+        if notice.crash_action && !app.busy {
+            toast = toast.action(&kit, "Copy Crash Report", true, move |app: &mut App, tx| {
+                app.toast = None;
+                app.update(Message::CopyCrashReport, tx);
+            });
+        }
+        overlays.push(ToastRegion::new().toast(toast.build(&kit)).build(&kit));
     }
     rune_kit::root(shell, overlays)
 }
@@ -275,30 +353,35 @@ fn source_actions(app: &App, kit: &Kit) -> El {
 }
 
 fn welcome(app: &App, kit: &Kit) -> El {
-    let mut page = col()
+    let page = col()
         .key("welcome-page")
         .grow(1.0)
         .min_h(0.0)
         .center()
         .gap(14.0)
-        .padding(28.0)
-        .child(heading(kit, "Choose Your Game Source"));
-    if !app.busy {
-        page = page
-            .child(muted(
-                kit,
-                "Select a playable PS4 PKG or the folder containing eboot.bin.",
-            ))
-            .child(source_actions(app, kit));
-    }
-    if !app.status.is_empty() {
-        page = page.child(body(kit, &app.status).color(if app.error {
-            kit.c.danger.fg
+        .padding(28.0);
+    if app.busy {
+        let label = if app.status.is_empty() {
+            "Loading Cars 3: Driven to Win…"
         } else {
-            kit.c.text_muted
-        }));
+            &app.status
+        };
+        return page
+            .child(
+                Loader::new()
+                    .size(28.0)
+                    .color(kit.c.text_base)
+                    .build(kit)
+                    .key("welcome-loader"),
+            )
+            .child(muted(kit, label));
     }
-    page
+    page.child(heading(kit, "Choose Your Game Source"))
+        .child(muted(
+            kit,
+            "Select a playable PS4 PKG or the folder containing eboot.bin.",
+        ))
+        .child(source_actions(app, kit))
 }
 
 fn garage(app: &App, kit: &Kit) -> El {
@@ -306,7 +389,8 @@ fn garage(app: &App, kit: &Kit) -> El {
         .key("garage-page")
         .grow(1.0)
         .min_h(0.0)
-        .fill(kit.c.bg_base);
+        .fill(kit.c.bg_base)
+        .transition(Transition::none());
     if let Some(cover) = app.assets.as_ref().and_then(|a| a.cover.as_ref()) {
         page.pixels_fit(cover.pixels(), SurfaceFit::Fill)
             .surface_anchor(Align::Start, Align::Start)
@@ -325,7 +409,7 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         .gap(14.0)
         .fill(kit.c.layer_01);
     if app.page == Page::Garage {
-        let mut play = col().center().gap(4.0).child(
+        let play_row = row().center_y().gap(8.0).child(
             action(
                 kit,
                 "play",
@@ -336,12 +420,9 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
             )
             .w(140.0),
         );
-        if app.error || app.busy {
-            play = play.child(body(kit, &app.status).color(if app.error {
-                kit.c.danger.fg
-            } else {
-                kit.c.text_muted
-            }));
+        let mut play = col().center().gap(4.0).child(play_row);
+        if app.busy {
+            play = play.child(body(kit, &app.status).color(kit.c.text_muted));
         }
         return frame.center().child(play);
     }
@@ -356,10 +437,18 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         }))
         .child(muted(
             kit,
-            format!("{}  ·  {}  ·  Vulkan", app.settings.rate, app.settings.mode),
+            format!(
+                "{}  ·  {}  ·  {}  ·  Vulkan",
+                SIZES
+                    .iter()
+                    .find(|c| c.0 == app.settings.size)
+                    .map_or(app.settings.size.as_str(), |c| c.1),
+                app.settings.rate,
+                app.settings.mode
+            ),
         ));
     let frame = frame.child(status);
-    if !matches!(app.page, Page::Settings | Page::Trophies) {
+    if app.page != Page::Trophies {
         return frame;
     }
     let slot = selection(
@@ -379,17 +468,10 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
     );
     frame.child(
         row()
-            .items_end()
-            .gap(8.0)
-            .child(col().gap(3.0).child(muted(kit, "Save Slot")).child(slot))
-            .child(action(
-                kit,
-                "load-save",
-                "Load Save…",
-                &icons::UPLOAD,
-                (!app.busy).then_some(Message::Pick(Picker::Save)),
-                ButtonVariant::Neutral,
-            )),
+            .center_y()
+            .gap(10.0)
+            .child(muted(kit, "Save Slot"))
+            .child(slot),
     )
 }
 
@@ -431,11 +513,15 @@ fn selection<T: Clone + 'static>(
     if let Some(menu) = overlays[first_overlay..].last_mut() {
         menu.set_min_w(if key == "save-slot" {
             365.0
+        } else if matches!(key, "gpu-adapter" | "display-monitor") {
+            280.0
+        } else if matches!(key, "compat-mode" | "render-resolution") {
+            215.0
         } else {
             width.max(160.0)
         });
     }
-    trigger
+    trigger.fill(kit.c.bg_button_neutral)
 }
 
 fn page_frame(kit: &Kit, key: &str, title: &str, actions: El) -> El {
@@ -443,10 +529,14 @@ fn page_frame(kit: &Kit, key: &str, title: &str, actions: El) -> El {
         .key(key.to_owned())
         .grow(1.0)
         .min_h(0.0)
+        .fill(kit.c.bg_base)
         .items_stretch()
         .gap(14.0)
         .px(26.0)
         .py(15.0)
+        .transition(enter_only(
+            Transition::offset(0.0, 8.0).combined(Transition::opacity()),
+        ))
         .child(
             row()
                 .justify_between()
@@ -458,6 +548,7 @@ fn page_frame(kit: &Kit, key: &str, title: &str, actions: El) -> El {
 
 fn setting_row(kit: &Kit, label: &str, control: El) -> El {
     row()
+        .key(format!("row-{label}"))
         .w_full()
         .h(36.0)
         .justify_between()
@@ -465,6 +556,33 @@ fn setting_row(kit: &Kit, label: &str, control: El) -> El {
         .gap(10.0)
         .child(body(kit, label))
         .child(control)
+}
+
+fn toggle_switch(
+    kit: &Kit,
+    key: &str,
+    label: &str,
+    checked: bool,
+    active: bool,
+    on_toggle: impl Fn(&mut App, &mut rune::Tx) + 'static,
+) -> El {
+    Switch::new(checked)
+        .label(label)
+        .hide_label()
+        .disabled(!active)
+        .on_toggle_tx(on_toggle)
+        .build(kit)
+        .key(key.to_owned())
+}
+
+fn preset_button(kit: &Kit, key: &str, label: &str, preset: Preset, active: bool) -> El {
+    let mut button = Button::new(label)
+        .variant(ButtonVariant::Neutral)
+        .disabled(!active);
+    if active {
+        button = button.on_press_tx(move |app: &mut App, tx| app.update(Message::Preset(preset), tx));
+    }
+    button.build(kit).key(key.to_owned())
 }
 
 fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
@@ -478,7 +596,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 title,
                 current,
                 options,
-                162.0,
+                172.0,
                 Placement::BottomEnd,
                 app,
                 kit,
@@ -486,162 +604,664 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 changed,
             )
         };
-    let mode = field(
-        "display-mode",
-        "Display Mode",
-        cfg.mode.1,
-        MODES.iter().map(|c| (*c, c.1.into())).collect(),
-        overlays,
-        Message::Mode,
-    );
-    let rate = field(
-        "frame-limit",
-        "Frame Rate Limit",
-        cfg.rate.1,
-        RATES.iter().map(|c| (*c, c.1.into())).collect(),
-        overlays,
-        Message::Rate,
-    );
-    let resolution = SIZES
-        .iter()
-        .find(|c| c.0 == cfg.size)
-        .map_or(cfg.size.as_str(), |c| c.1);
-    let size = if cfg.mode.0 == "windowed" {
-        selection(
-            "window-size",
-            "Window Size",
-            resolution,
-            SIZES.iter().map(|c| (c.0.to_owned(), c.1.into())).collect(),
-            162.0,
-            Placement::BottomEnd,
-            app,
-            kit,
-            overlays,
-            Message::Size,
-        )
+
+    let has_update = matches!(&app.update_info, Some(Ok(info)) if info.available);
+    let system_label = if has_update {
+        "Source & Updates (1)"
     } else {
-        row().w(162.0).justify_end().child(muted(kit, resolution))
+        "Source & Updates"
     };
-    let volume = selection(
-        "volume",
-        "Master Volume",
-        &format!("{}%", cfg.volume),
-        (0..=200)
-            .step_by(5)
-            .map(|value| (value, format!("{value}%")))
-            .collect(),
-        100.0,
-        Placement::BottomEnd,
-        app,
-        kit,
-        overlays,
-        Message::Volume,
-    );
-    let identity = app
-        .game_identity
-        .as_ref()
-        .filter(|(path, _)| path == app.source.text.trim())
-        .map(|(_, identity)| muted(kit, identity).key("game-identity"));
-    let source = TextInput::new(&app.source)
-        .width(None)
-        .label("Game Source")
-        .placeholder("Choose a playable PKG or extracted game folder")
-        .disabled(!active)
-        .on_edit(|app: &mut App| &mut app.source)
-        .on_change(|app: &mut App, _| app.dirty())
-        .build(kit)
-        .key("game-source")
-        .grow(1.0)
-        .min_w(0.0);
-    let display = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(4.0)
-        .child(medium(kit, "Display"))
-        .child(setting_row(kit, "Display Mode", mode))
-        .child(setting_row(kit, "Window Size", size))
-        .child(setting_row(kit, "Frame Rate Limit", rate));
-    let game = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(4.0)
-        .child(medium(kit, "In Game"))
-        .child(setting_row(
-            kit,
-            "Show Frame Rate",
-            Switch::new(cfg.fps)
-                .label("Show Frame Rate")
-                .hide_label()
-                .disabled(!active)
-                .on_toggle_tx(|app: &mut App, tx| app.update(Message::Fps(!app.settings.fps), tx))
+    let group_tabs = [
+        ("Display & Graphics", "tab-graphics", SettingsTab::Graphics),
+        ("Upscaling & Hardware", "tab-upscaling", SettingsTab::Upscaling),
+        ("Gameplay & Audio", "tab-gameplay", SettingsTab::Gameplay),
+        (system_label, "tab-system", SettingsTab::System),
+    ];
+    let tab_bar = row()
+        .key("settings-group-tabs")
+        .w_full()
+        .padding(4.0)
+        .gap(6.0)
+        .fill(kit.c.layer_01)
+        .radius(kit.radius.md)
+        .children(group_tabs.into_iter().map(|(label, key, tab)| {
+            let selected = app.settings_tab == tab;
+            let variant = if selected {
+                ButtonVariant::Contrast
+            } else {
+                ButtonVariant::GhostMuted
+            };
+            Button::new(label)
+                .variant(variant)
+                .on_press_tx(move |app: &mut App, tx| app.update(Message::SettingsTab(tab), tx))
                 .build(kit)
-                .key("show-fps"),
-        ))
-        .child(setting_row(
-            kit,
-            "Show Keyboard Hints",
-            Switch::new(cfg.keyboard_hints)
-                .label("Show Keyboard Hints")
-                .hide_label()
+                .key(key.to_owned())
+        }));
+
+    let content = match app.settings_tab {
+        SettingsTab::Graphics => {
+            let mode = field(
+                "display-mode",
+                "Display Mode",
+                cfg.mode.1,
+                MODES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Mode,
+            );
+            let rate = field(
+                "frame-limit",
+                "Frame Rate Limit",
+                cfg.rate.1,
+                RATES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Rate,
+            );
+            let resolution = SIZES
+                .iter()
+                .find(|c| c.0 == cfg.size)
+                .map_or(cfg.size.as_str(), |c| c.1);
+            let size = selection(
+                "render-resolution",
+                "Render Resolution",
+                resolution,
+                SIZES.iter().map(|c| (c.0.to_owned(), c.1.into())).collect(),
+                172.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Size,
+            );
+            let shadow = field(
+                "shadow-resolution",
+                "Shadow Resolution",
+                cfg.shadow.1,
+                SHADOW_SIZES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Shadow,
+            );
+            let anisotropy = field(
+                "anisotropy",
+                "Anisotropic Filtering",
+                cfg.anisotropy.1,
+                ANISOTROPIES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Anisotropy,
+            );
+            let presets = row()
+                .w_full()
+                .px(12.0)
+                .py(10.0)
+                .justify_between()
+                .center_y()
+                .gap(10.0)
+                .fill(kit.c.layer_01)
+                .radius(kit.radius.md)
+                .child(medium(kit, "Quick Presets"))
+                .child(
+                    row()
+                        .gap(6.0)
+                        .child(preset_button(
+                            kit,
+                            "preset-handheld",
+                            "Handheld (720p)",
+                            Preset::Handheld,
+                            active,
+                        ))
+                        .child(preset_button(
+                            kit,
+                            "preset-balanced",
+                            "Balanced (1080p)",
+                            Preset::Balanced,
+                            active,
+                        ))
+                        .child(preset_button(
+                            kit,
+                            "preset-high-refresh",
+                            "High Refresh (1440p)",
+                            Preset::HighRefresh,
+                            active,
+                        ))
+                        .child(preset_button(
+                            kit,
+                            "preset-ultra",
+                            "Ultra (4K)",
+                            Preset::Ultra,
+                            active,
+                        )),
+                );
+            let left = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Display"))
+                .child(setting_row(kit, "Display Mode", mode))
+                .child(setting_row(kit, "Render Resolution", size))
+                .child(setting_row(kit, "Frame Rate Limit", rate))
+                .child(setting_row(
+                    kit,
+                    "Vertical Sync (VSync)",
+                    toggle_switch(
+                        kit,
+                        "vsync",
+                        "Vertical Sync (VSync)",
+                        cfg.vsync,
+                        active,
+                        |app, tx| app.update(Message::Vsync(!app.settings.vsync), tx),
+                    ),
+                ));
+            let right = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Rendering Quality"))
+                .child(setting_row(kit, "Shadow Resolution", shadow))
+                .child(setting_row(kit, "Anisotropic Filtering", anisotropy))
+                .child(setting_row(
+                    kit,
+                    "Force High LOD",
+                    toggle_switch(
+                        kit,
+                        "high-lod",
+                        "Force High LOD",
+                        cfg.high_lod,
+                        active,
+                        |app, tx| app.update(Message::HighLod(!app.settings.high_lod), tx),
+                    ),
+                ))
+                .child(setting_row(
+                    kit,
+                    "Motion Blur",
+                    toggle_switch(
+                        kit,
+                        "motion-blur",
+                        "Motion Blur",
+                        cfg.motion_blur,
+                        active,
+                        |app, tx| app.update(Message::MotionBlur(!app.settings.motion_blur), tx),
+                    ),
+                ))
+                .child(setting_row(
+                    kit,
+                    "Bloom",
+                    toggle_switch(
+                        kit,
+                        "bloom",
+                        "Bloom",
+                        cfg.bloom,
+                        active,
+                        |app, tx| app.update(Message::Bloom(!app.settings.bloom), tx),
+                    ),
+                ));
+            col()
+                .key("settings-graphics-content")
+                .w_full()
+                .gap(16.0)
+                .child(presets.key("presets-card"))
+                .child(
+                    row()
+                        .key("graphics-columns")
+                        .w_full()
+                        .gap(32.0)
+                        .child(left.key("graphics-left"))
+                        .child(right.key("graphics-right")),
+                )
+        }
+        SettingsTab::Upscaling => {
+            let compat = field(
+                "compat-mode",
+                "GPU Compatibility",
+                cfg.compat.1,
+                COMPAT_MODES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Compat,
+            );
+            let mut gpu_options = vec![("auto".to_owned(), "Auto".to_owned())];
+            for (id, name) in &app.hardware.gpus {
+                gpu_options.push((id.clone(), format!("#{id}: {name}")));
+            }
+            let gpu_current = gpu_options
+                .iter()
+                .find(|(id, _)| id == &cfg.gpu_id)
+                .map(|(_, label)| label.clone())
+                .unwrap_or_else(|| format!("#{}", cfg.gpu_id));
+            let gpu = selection(
+                "gpu-adapter",
+                "GPU Adapter",
+                &gpu_current,
+                gpu_options,
+                172.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Gpu,
+            );
+            let mut monitor_options = vec![(String::new(), "Primary Display".to_owned())];
+            for (id, label) in &app.hardware.monitors {
+                monitor_options.push((id.clone(), label.clone()));
+            }
+            let monitor_current = monitor_options
+                .iter()
+                .find(|(id, _)| id == &cfg.monitor)
+                .map(|(_, label)| label.clone())
+                .unwrap_or_else(|| format!("Display {}", cfg.monitor));
+            let monitor = selection(
+                "display-monitor",
+                "Monitor",
+                &monitor_current,
+                monitor_options,
+                172.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Monitor,
+            );
+            let rcas_strength = selection(
+                "rcas-strength",
+                "RCAS Strength",
+                &format!("{}%", cfg.rcas_strength),
+                (0..=100)
+                    .step_by(5)
+                    .map(|value| (value, format!("{value}%")))
+                    .collect(),
+                100.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::RcasStrength,
+            );
+            let left = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Upscaling & Shaders"))
+                .child(setting_row(
+                    kit,
+                    "FSR 1 Upscaling",
+                    toggle_switch(
+                        kit,
+                        "fsr1",
+                        "FSR 1 Upscaling",
+                        cfg.fsr1,
+                        active,
+                        |app, tx| app.update(Message::Fsr1(!app.settings.fsr1), tx),
+                    ),
+                ))
+                .child(setting_row(
+                    kit,
+                    "RCAS Sharpening",
+                    toggle_switch(
+                        kit,
+                        "rcas",
+                        "RCAS Sharpening",
+                        cfg.rcas,
+                        active,
+                        |app, tx| app.update(Message::Rcas(!app.settings.rcas), tx),
+                    ),
+                ))
+                .child(setting_row(kit, "RCAS Strength", rcas_strength))
+                .child(setting_row(
+                    kit,
+                    "Async Shaders",
+                    toggle_switch(
+                        kit,
+                        "async-shaders",
+                        "Async Shaders",
+                        cfg.async_shaders,
+                        active,
+                        |app, tx| app.update(Message::AsyncShaders(!app.settings.async_shaders), tx),
+                    ),
+                ));
+            let right = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Hardware & Compatibility"))
+                .child(setting_row(kit, "GPU Adapter", gpu))
+                .child(setting_row(kit, "Monitor", monitor))
+                .child(setting_row(kit, "GPU Compatibility", compat));
+            row()
+                .key("settings-upscaling-content")
+                .w_full()
+                .gap(32.0)
+                .child(left.key("upscaling-left"))
+                .child(right.key("upscaling-right"))
+        }
+        SettingsTab::Gameplay => {
+            let fov = field(
+                "fov-scale",
+                "Camera FOV",
+                cfg.fov.1,
+                FOV_SCALES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::Fov,
+            );
+            let glyph_style = field(
+                "glyph-style",
+                "Button Prompts",
+                cfg.glyph_style.1,
+                GLYPH_STYLES.iter().map(|c| (*c, c.1.into())).collect(),
+                overlays,
+                Message::GlyphStyle,
+            );
+            let vibration = selection(
+                "vibration",
+                "Controller Vibration",
+                &format!("{}%", cfg.vibration),
+                (0..=100)
+                    .step_by(10)
+                    .map(|value| (value, format!("{value}%")))
+                    .collect(),
+                100.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Vibration,
+            );
+            let volume = selection(
+                "volume",
+                "Master Volume",
+                &format!("{}%", cfg.volume),
+                (0..=200)
+                    .step_by(5)
+                    .map(|value| (value, format!("{value}%")))
+                    .collect(),
+                100.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Volume,
+            );
+            let left = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Camera & HUD"))
+                .child(setting_row(kit, "Camera FOV", fov))
+                .child(setting_row(
+                    kit,
+                    "Skip Intro Logos",
+                    toggle_switch(
+                        kit,
+                        "skip-intro",
+                        "Skip Intro Logos",
+                        cfg.skip_intro,
+                        active,
+                        |app, tx| app.update(Message::SkipIntro(!app.settings.skip_intro), tx),
+                    ),
+                ))
+                .child(setting_row(
+                    kit,
+                    "Show Frame Rate",
+                    toggle_switch(
+                        kit,
+                        "show-fps",
+                        "Show Frame Rate",
+                        cfg.fps,
+                        active,
+                        |app, tx| app.update(Message::Fps(!app.settings.fps), tx),
+                    ),
+                ))
+                .child(setting_row(
+                    kit,
+                    "Show Keyboard Hints",
+                    toggle_switch(
+                        kit,
+                        "show-keyboard-hints",
+                        "Show Keyboard Hints",
+                        cfg.keyboard_hints,
+                        active,
+                        |app, tx| {
+                            app.update(Message::KeyboardHints(!app.settings.keyboard_hints), tx)
+                        },
+                    ),
+                ));
+            let right = col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(6.0)
+                .child(medium(kit, "Controller & Audio"))
+                .child(setting_row(kit, "Button Prompts", glyph_style))
+                .child(setting_row(kit, "Controller Vibration", vibration))
+                .child(setting_row(kit, "Master Volume", volume));
+            row()
+                .key("settings-gameplay-content")
+                .w_full()
+                .gap(32.0)
+                .child(left.key("gameplay-left"))
+                .child(right.key("gameplay-right"))
+        }
+        SettingsTab::System => {
+            let identity = app
+                .game_identity
+                .as_ref()
+                .filter(|(path, _)| path == app.source.text.trim())
+                .map(|(_, identity)| muted(kit, identity).key("game-identity"));
+            let source = TextInput::new(&app.source)
+                .width(None)
+                .label("Game Source")
+                .placeholder("Choose a playable PKG or extracted game folder")
                 .disabled(!active)
-                .on_toggle_tx(|app: &mut App, tx| {
-                    app.update(Message::KeyboardHints(!app.settings.keyboard_hints), tx)
-                })
+                .on_edit(|app: &mut App| &mut app.source)
+                .on_change(|app: &mut App, _| app.dirty())
                 .build(kit)
-                .key("show-keyboard-hints"),
-        ))
-        .child(setting_row(
+                .key("game-source")
+                .grow(1.0)
+                .min_w(0.0);
+            let source_card = col()
+                .w_full()
+                .padding(14.0)
+                .gap(8.0)
+                .fill(kit.c.layer_01)
+                .radius(kit.radius.md)
+                .child(
+                    row()
+                        .justify_between()
+                        .center_y()
+                        .child(medium(kit, "Game Source"))
+                        .children(identity),
+                )
+                .child(
+                    row()
+                        .center_y()
+                        .gap(8.0)
+                        .child(source)
+                        .child(source_actions(app, kit)),
+                );
+
+            let (update_title, update_detail, download_url) = if app.checking_update {
+                (
+                    "Checking GitHub Releases…".to_owned(),
+                    format!("Installed version: v{}", env!("CARGO_PKG_VERSION")),
+                    None,
+                )
+            } else {
+                match &app.update_info {
+                    Some(Ok(info)) if info.available => (
+                        format!("New Release Available: {}", info.tag),
+                        format!(
+                            "{}  ·  Installed: v{}",
+                            info.title,
+                            env!("CARGO_PKG_VERSION")
+                        ),
+                        Some(info.url.clone()),
+                    ),
+                    Some(Ok(info)) => (
+                        format!("PistonPort is Up to Date (v{})", env!("CARGO_PKG_VERSION")),
+                        format!("Latest GitHub Release: {} ({})", info.tag, info.title),
+                        None,
+                    ),
+                    Some(Err(err)) => (
+                        "Update Check Unavailable".to_owned(),
+                        err.clone(),
+                        None,
+                    ),
+                    None => (
+                        format!("Installed Version: v{}", env!("CARGO_PKG_VERSION")),
+                        "Check GitHub Releases for new PistonPort updates.".to_owned(),
+                        None,
+                    ),
+                }
+            };
+            let mut update_actions = row().gap(8.0).center_y();
+            if let Some(url) = download_url {
+                update_actions = update_actions.child(action(
+                    kit,
+                    "download-update",
+                    "Download Release",
+                    &icons::UPLOAD,
+                    Some(Message::OpenUpdateUrl(url)),
+                    ButtonVariant::Contrast,
+                ));
+            }
+            update_actions = update_actions.child(action(
+                kit,
+                "check-update",
+                if app.checking_update {
+                    "Checking…"
+                } else {
+                    "Check for Updates"
+                },
+                &icons::RESET,
+                (!app.checking_update).then_some(Message::CheckUpdate),
+                ButtonVariant::Neutral,
+            ));
+            let update_card = row()
+                .w_full()
+                .padding(14.0)
+                .gap(14.0)
+                .justify_between()
+                .center_y()
+                .fill(kit.c.layer_01)
+                .radius(kit.radius.md)
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(4.0)
+                        .child(medium(kit, &update_title))
+                        .child(muted(kit, update_detail)),
+                )
+                .child(update_actions);
+
+            let diag_card = row()
+                .w_full()
+                .padding(14.0)
+                .gap(14.0)
+                .justify_between()
+                .center_y()
+                .fill(kit.c.layer_01)
+                .radius(kit.radius.md)
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(4.0)
+                        .child(medium(kit, "Diagnostics & Crash Reports"))
+                        .child(muted(
+                            kit,
+                            "Open native-last.log or copy system specs, settings, and crash details to clipboard.",
+                        )),
+                )
+                .child(
+                    row()
+                        .gap(8.0)
+                        .child(action(
+                            kit,
+                            "open-log",
+                            "Open Log",
+                            &icons::FOLDER,
+                            Some(Message::OpenLog),
+                            ButtonVariant::Neutral,
+                        ))
+                        .child(action(
+                            kit,
+                            "copy-report",
+                            "Copy Crash Report",
+                            &icons::PACKAGE,
+                            active.then_some(Message::CopyCrashReport),
+                            ButtonVariant::Neutral,
+                        )),
+                );
+
+            let support_card = row()
+                .w_full()
+                .padding(14.0)
+                .gap(14.0)
+                .justify_between()
+                .center_y()
+                .fill(kit.c.layer_01)
+                .radius(kit.radius.md)
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(4.0)
+                        .child(medium(kit, "Support PistonPort"))
+                        .child(muted(
+                            kit,
+                            "Enjoying Cars 3: Driven to Win on PC? Support ongoing development and updates.",
+                        )),
+                )
+                .child(action(
+                    kit,
+                    "support-coffee",
+                    "Buy Me a Coffee",
+                    &icons::COFFEE,
+                    Some(Message::OpenCoffee),
+                    ButtonVariant::Neutral,
+                ));
+
+            col()
+                .key("settings-system-content")
+                .w_full()
+                .gap(12.0)
+                .child(source_card.key("source-card"))
+                .child(update_card.key("update-card"))
+                .child(diag_card.key("diag-card"))
+                .child(support_card.key("support-card"))
+        }
+    };
+
+    let scroll_key = match app.settings_tab {
+        SettingsTab::Graphics => "settings-graphics-scroll",
+        SettingsTab::Upscaling => "settings-upscaling-scroll",
+        SettingsTab::Gameplay => "settings-gameplay-scroll",
+        SettingsTab::System => "settings-system-scroll",
+    };
+    let header_actions = row()
+        .gap(8.0)
+        .child(action(
             kit,
-            "Vertical Sync (VSync)",
-            Switch::new(cfg.vsync)
-                .label("Vertical Sync (VSync)")
-                .hide_label()
-                .disabled(!active)
-                .on_toggle_tx(|app: &mut App, tx| {
-                    app.update(Message::Vsync(!app.settings.vsync), tx)
-                })
-                .build(kit)
-                .key("vsync"),
+            "reset-settings",
+            "Restore Defaults",
+            &icons::RESET,
+            active.then_some(Message::ResetSettings),
+            ButtonVariant::Neutral,
         ))
-        .child(setting_row(kit, "Master Volume", volume));
-    page_frame(
-        kit,
-        "settings-page",
-        "Settings",
-        action(
+        .child(action(
             kit,
             "save-settings",
             "Save Settings",
             &icons::SAVE,
             active.then_some(Message::Save),
-            ButtonVariant::Neutral,
-        ),
-    )
-    .child(
-        col()
-            .gap(6.0)
-            .child(
-                row()
-                    .justify_between()
-                    .center_y()
-                    .child(medium(kit, "Game Source"))
-                    .children(identity),
-            )
-            .child(
-                row()
-                    .center_y()
-                    .gap(8.0)
-                    .child(source)
-                    .child(source_actions(app, kit)),
-            ),
-    )
-    .child(scroll(
-        "settings-scroll",
-        row().w_full().gap(32.0).child(display).child(game),
-    ))
+            ButtonVariant::Contrast,
+        ));
+    page_frame(kit, "settings-page", "Settings", header_actions)
+        .child(tab_bar)
+        .child(
+            scroll(kit, scroll_key, content.pb(12.0)).transition(enter_only(
+                Transition::offset(0.0, 8.0).combined(Transition::opacity()),
+            )),
+        )
 }
 
-fn scroll(key: &str, content: El) -> El {
+fn scroll(kit: &Kit, key: &str, content: El) -> El {
     col()
         .key(key.to_owned())
         .w_full()
@@ -650,7 +1270,11 @@ fn scroll(key: &str, content: El) -> El {
         .scroll(ScrollSpec {
             stick_bottom: false,
         })
-        .child(content)
+        .scroll_fade(
+            ScrollFade::feather(18.0).stops(&[(0.25, 0.16), (0.5, 0.5), (0.75, 0.84)]),
+        )
+        .child(content.pr(14.0))
+        .scroll_bar(kit)
 }
 
 fn control_columns(action: El, keyboard: El, playstation: El, xbox: El) -> El {
@@ -692,6 +1316,7 @@ fn controls(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         medium(kit, "DualShock"),
         medium(kit, "Xbox Controller"),
     )
+    .pr(24.0)
     .fill(kit.c.layer_01);
     let steer = control_columns(
         body(kit, "Steer"),
@@ -752,7 +1377,7 @@ fn controls(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
     }
     page_frame(kit, "controls-page", "Controls", actions)
         .child(headings)
-        .child(scroll("controls-scroll", list))
+        .child(scroll(kit, "controls-scroll", list))
 }
 
 fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
@@ -763,6 +1388,10 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
     };
     let control = if app.selected.id == slot.id {
         muted(kit, "Active")
+            .key(format!("active-save-{}", slot.id))
+            .transition(enter_only(
+                Transition::scale(0.94).combined(Transition::opacity()),
+            ))
     } else {
         action(
             kit,
@@ -772,6 +1401,9 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
             (!app.busy).then_some(Message::SelectSlot(slot.clone())),
             ButtonVariant::Neutral,
         )
+        .transition(enter_only(
+            Transition::scale(0.94).combined(Transition::opacity()),
+        ))
     };
     let mut info = col().gap(3.0).grow(1.0).min_w(0.0).child(medium(
         kit,
@@ -782,16 +1414,26 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
     if !detail.is_empty() {
         info = info.child(muted(kit, detail));
     }
+    let export = action(
+        kit,
+        &format!("export-save-{}", slot.id),
+        "Export…",
+        &icons::SAVE,
+        (!app.busy).then_some(Message::ExportSave(slot.clone())),
+        ButtonVariant::GhostMuted,
+    );
     row()
         .key(format!("save-row-{}", slot.id))
         .w_full()
         .h(48.0)
         .px(10.0)
-        .gap(12.0)
+        .gap(10.0)
         .center_y()
         .fill(kit.c.layer_01)
         .radius(kit.radius.md)
+        .transition(Transition::offset(0.0, 6.0).combined(Transition::opacity()))
         .child(info)
+        .child(export)
         .child(control)
 }
 
@@ -833,7 +1475,7 @@ fn saves(app: &App, kit: &Kit) -> El {
             ButtonVariant::Contrast,
         ),
     )
-    .child(scroll("saves-scroll", list))
+    .child(scroll(kit, "saves-scroll", list))
 }
 
 fn trophies(app: &App, kit: &Kit) -> El {
@@ -858,7 +1500,8 @@ fn trophies(app: &App, kit: &Kit) -> El {
         Some(Ok(rows)) => {
             let headings = row()
                 .gap(12.0)
-                .px(10.0)
+                .pl(10.0)
+                .pr(24.0)
                 .h(32.0)
                 .center_y()
                 .fill(kit.c.layer_01)
@@ -914,7 +1557,11 @@ fn trophies(app: &App, kit: &Kit) -> El {
                             .child(body(kit, status).color(status_color)),
                     )
             }));
-            page.child(headings).child(scroll("trophies-scroll", list))
+            page.child(headings).child(
+                scroll(kit, "trophies-scroll", list).transition(enter_only(
+                    Transition::offset(0.0, 8.0).combined(Transition::opacity()),
+                )),
+            )
         }
         Some(Err(error)) => page
             .child(body(kit, "Could Not Load Trophies").color(kit.c.danger.fg))

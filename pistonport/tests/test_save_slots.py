@@ -106,6 +106,25 @@ class SaveSlotTest(unittest.TestCase):
             self.assertEqual(slots.active_root(profile), profile)
             self.assertEqual((original / "P0").read_bytes(), payload)
 
+    def test_export_save_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / "profile"
+            profile.mkdir()
+            exported = Path(tmp) / "backup.zip"
+            slots.export_save(profile, slots.COMPLETE_BUILTIN, exported)
+            self.assertTrue(exported.is_file())
+            with zipfile.ZipFile(exported) as archive:
+                names = set(archive.namelist())
+                self.assertIn(f"{slots.TITLE}/P0", names)
+                self.assertIn(f"{slots.TITLE}.sce_sys/param.bin", names)
+                self.assertIn("trophies.dat", names)
+            reimported = slots.import_save(profile, exported)
+            root = slots.slot_root(profile, reimported)
+            self.assertTrue((root / slots.PLAYER).is_file())
+            self.assertEqual(
+                int.from_bytes((root / "trophies.dat").read_bytes(), "little").bit_count(), 22
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

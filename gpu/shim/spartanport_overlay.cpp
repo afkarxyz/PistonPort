@@ -101,15 +101,14 @@ using SpartanUi::Tr;
 std::mutex imgui_mutex; // the ImGui context: window thread (input) and present thread
 bool initialized = false;
 
-// The launcher's colours (launcher/spartanport_launcher_win.py: BG, PANEL, CARD, LINE, TEXT, MUTED,
-// ACCENT, ACCENT_HI), for the menu and the trophy window; gold marks trophies and section titles.
+// PistonPort neutral dark palette (matching the Rune launcher's Kit::neutral dark theme).
 namespace Ink {
 constexpr ImVec4 Rgb(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
-constexpr ImVec4 Bg = Rgb(0x0d, 0x0b, 0x0b), Panel = Rgb(0x16, 0x12, 0x12), Card = Rgb(0x1d, 0x17, 0x17);
-constexpr ImVec4 Line = Rgb(0x2a, 0x22, 0x22), Raised = Rgb(0x34, 0x2a, 0x2a);
-constexpr ImVec4 Text = Rgb(0xe6, 0xe0, 0xd8), Muted = Rgb(0x8a, 0x81, 0x7a);
-constexpr ImVec4 Accent = Rgb(0xa4, 0x16, 0x1a), AccentHi = Rgb(0xc8, 0x1e, 0x25), AccentDeep = Rgb(0x3a, 0x14, 0x16);
-constexpr ImVec4 Gold = Rgb(0xd4, 0xa8, 0x5a);
+constexpr ImVec4 Bg = Rgb(0x0f, 0x10, 0x12), Panel = Rgb(0x16, 0x18, 0x1c), Card = Rgb(0x1d, 0x20, 0x26);
+constexpr ImVec4 Line = Rgb(0x2d, 0x31, 0x3a), Raised = Rgb(0x36, 0x3b, 0x46);
+constexpr ImVec4 Text = Rgb(0xec, 0xee, 0xf2), Muted = Rgb(0x8e, 0x94, 0xa0);
+constexpr ImVec4 Accent = Rgb(0x3b, 0x82, 0xf6), AccentHi = Rgb(0x60, 0xa5, 0xfa), AccentDeep = Rgb(0x1e, 0x29, 0x3b);
+constexpr ImVec4 Gold = Rgb(0xd8, 0xdc, 0xe4);
 // The grades, as the launcher's Trophies page colours them (TROPHY_TIERS).
 constexpr ImVec4 Bronze = Rgb(0xcd, 0x7f, 0x32), Silver = Rgb(0xc4, 0xc4, 0xc8), GoldGrade = Rgb(0xe0, 0xb4, 0x3a);
 constexpr ImVec4 Platinum = Rgb(0x8f, 0xd3, 0xe8);
@@ -3090,8 +3089,8 @@ void ConfigureContext() {
     if (!SpartanUi::chinese) {
         ImFontConfig title_config;
         title_config.FontDataOwnedByAtlas = false;
-        title_font = io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(spartanport_title_ttf),
-                                                    int(spartanport_title_ttf_end - spartanport_title_ttf), kTitleSize,
+        title_font = io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(spartanport_font_ttf),
+                                                    int(spartanport_font_ttf_end - spartanport_font_ttf), kTitleSize,
                                                     &title_config);
         if (title_font) { // what Cinzel lacks (Cyrillic, some accents) from DejaVu Sans
             ImFontConfig merge;
