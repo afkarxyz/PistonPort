@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use rune::{
-    Align, Cx, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair, SurfaceFit,
-    TextStyle, Transition, col, el, row, text,
+    Align, Cx, Edge, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair,
+    SurfaceFit, TextStyle, Transition, col, el, row, text,
 };
 use rune_kit::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, Loader, Placement,
-    ScrollBar, Select, SelectAppearance, Switch, TextInput, Toast, ToastRegion,
+    ScrollBar, Select, SelectAppearance, Switch, TextInput, ToastRegion,
 };
 
 use crate::icons;
@@ -14,7 +14,7 @@ use crate::profile::{
     ANISOTROPIES, COMPAT_MODES, FOV_SCALES, MODES, Preset, RATES, SHADOW_SIZES, SIZES, Slot,
 };
 use crate::trophy_data::{Tier, tier_color};
-use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab};
+use crate::{App, DEFAULT_PAD, Message, Page, Picker, SettingsTab, ToastNotice};
 
 const ICON: &[u8] = include_bytes!("../../../../pistonport/launcher/pistonport.png");
 const DUALSHOCK_STICK: &[u8] = include_bytes!("../../../assets/pads/dualshock4/leftstick.png");
@@ -308,31 +308,93 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         shell = shell.child(footer(app, &kit, &mut overlays));
     }
     if let Some(notice) = &app.toast {
-        let id = notice.id;
-        let lead = if notice.error {
-            rune::icon(&icons::ALERT, 16.0).color(kit.c.danger.fg)
-        } else {
-            rune::icon(&icons::CHECK, 16.0).color(kit.c.success.fg)
-        };
-        let mut toast = Toast::new(format!("toast-{id}"), &notice.title)
-            .lead(lead)
-            .on_close(move |app: &mut App| {
-                if app.toast.as_ref().is_some_and(|t| t.id == id) {
-                    app.toast = None;
-                }
-            });
-        if let Some(detail) = &notice.detail {
-            toast = toast.description(detail);
-        }
-        if notice.crash_action && !app.busy {
-            toast = toast.action(&kit, "Copy Crash Report", true, move |app: &mut App, tx| {
-                app.toast = None;
-                app.update(Message::CopyCrashReport, tx);
-            });
-        }
-        overlays.push(ToastRegion::new().toast(toast.build(&kit)).build(&kit));
+        overlays.push(ToastRegion::new().toast(toast_card(app, &kit, notice)).build(&kit));
     }
     rune_kit::root(shell, overlays)
+}
+
+fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
+    let c = &kit.c;
+    let id = notice.id;
+    let lead = if notice.error {
+        rune::icon(&icons::ALERT, 16.0).color(c.danger.fg)
+    } else {
+        rune::icon(&icons::CHECK, 16.0).color(c.success.fg)
+    };
+    let mut content = col()
+        .key("content")
+        .grow(1.0)
+        .shrink()
+        .min_w(0.0)
+        .gap(4.0)
+        .a11y_hidden()
+        .child(
+            text(notice.title.clone())
+                .key("title")
+                .font(TextStyle {
+                    line_height: 20.0,
+                    ..kit.ty.ui_medium
+                })
+                .color(c.text_base)
+                .wrap_anywhere()
+                .w_full(),
+        );
+    let described = notice.detail.clone().unwrap_or_default();
+    if let Some(detail) = &notice.detail {
+        content = content.child(
+            text(detail.clone())
+                .key("description")
+                .font(kit.ty.ui)
+                .color(c.text_muted)
+                .wrap_anywhere()
+                .w_full(),
+        );
+    }
+    let close = IconButton::new(kit.glyph.close)
+        .label("Close")
+        .variant(IconButtonVariant::Ghost)
+        .control_size(ControlSize::Regular)
+        .on_press(move |app: &mut App| {
+            if app.toast.as_ref().is_some_and(|t| t.id == id) {
+                app.toast = None;
+            }
+        })
+        .build(kit);
+    let top = row()
+        .key("top")
+        .w_full()
+        .min_w(0.0)
+        .gap(12.0)
+        .items_start()
+        .child(el().key("icon").size(16.0, 20.0).center().child(lead).a11y_hidden())
+        .child(content)
+        .child(close);
+    let mut root = col()
+        .key(format!("toast-{id}"))
+        .role("status")
+        .label(notice.title.clone())
+        .description(described)
+        .w(360.0)
+        .padding(12.0)
+        .gap(10.0)
+        .radius(8.0)
+        .clip_rounded(8.0)
+        .fill(c.layer_01)
+        .border(1.0, c.border_muted)
+        .child(top);
+    if notice.crash_action && !app.busy {
+        let action_btn = Button::new("Copy Crash Report")
+            .variant(ButtonVariant::Neutral)
+            .control_size(ControlSize::Regular)
+            .on_press_tx(move |app: &mut App, tx| {
+                app.toast = None;
+                app.update(Message::CopyCrashReport, tx);
+            })
+            .build(kit);
+        root = root.child(row().key("actions").pl(28.0).gap(8.0).flex_wrap().child(action_btn));
+    }
+    root.transition(Transition::move_edge(Edge::Bottom))
+        .motion(Spring::new(0.28, 0.0))
 }
 
 fn source_actions(app: &App, kit: &Kit) -> El {

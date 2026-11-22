@@ -184,13 +184,31 @@ impl App {
         let (slots, selected) = profile::slots(&paths.profile);
         let source = profile::read(&paths.profile.join("game-folder.txt"));
         let has_source = !source.is_empty();
-        let toast = migration_error.map(|detail| ToastNotice {
-            id: 1,
-            title: "Save Migration Notice".into(),
-            detail: Some(detail),
-            error: true,
-            crash_action: false,
-        });
+        let toast = std::env::var("PISTONPORT_SMOKE_TOAST")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|raw| {
+                let (title, detail) = match raw.split_once('|') {
+                    Some((t, d)) => (t.to_owned(), Some(d.to_owned())),
+                    None => (raw, None),
+                };
+                ToastNotice {
+                    id: 1,
+                    title,
+                    detail,
+                    error: true,
+                    crash_action: true,
+                }
+            })
+            .or_else(|| {
+                migration_error.map(|detail| ToastNotice {
+                    id: 1,
+                    title: "Save Migration Notice".into(),
+                    detail: Some(detail),
+                    error: true,
+                    crash_action: false,
+                })
+            });
         Self {
             settings: Settings::load(&paths.profile),
             hardware: HardwareInfo::default(),
