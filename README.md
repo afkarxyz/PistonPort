@@ -1,5 +1,9 @@
 # PistonPort
 
+[![Stars](https://img.shields.io/github/stars/afkarxyz/PistonPort?color=ffcb47&labelColor=black&logo=github&label=Stars)](https://github.com/afkarxyz/PistonPort/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/afkarxyz/PistonPort/total?color=22c55e&labelColor=black&logo=github&label=Downloads)](https://github.com/afkarxyz/PistonPort/releases)
+[![Release](https://img.shields.io/github/v/release/afkarxyz/PistonPort?color=8b5cf6&labelColor=black&logo=github&label=Release)](https://github.com/afkarxyz/PistonPort/releases/latest)
+
 An unofficial native Windows x64 port of *Cars 3: Driven to Win* (PS4).
 
 [**Download for Windows (Latest)**](https://github.com/afkarxyz/PistonPort/releases/latest/download/PistonPort-Windows-x64.zip)
