@@ -492,28 +492,10 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         .gap(14.0)
         .fill(kit.c.layer_01);
     if app.page == Page::Garage {
-        let left = col()
-            .min_w(0.0)
-            .grow(1.0)
-            .gap(3.0)
-            .child(body(kit, &app.status).color(if app.error {
-                kit.c.danger.fg
-            } else {
-                kit.c.text_base
-            }))
-            .child(muted(
-                kit,
-                format!(
-                    "{}  ·  {}  ·  {}  ·  Vulkan",
-                    SIZES
-                        .iter()
-                        .find(|s| s.0 == app.settings.size)
-                        .map(|s| s.1)
-                        .unwrap_or(&app.settings.size),
-                    app.settings.rate.1,
-                    app.settings.mode.1,
-                ),
-            ));
+        let mut left = row().min_w(0.0).grow(1.0).center_y();
+        if app.busy {
+            left = left.child(body(kit, &app.status).color(kit.c.text_muted));
+        }
         let play = action(
             kit,
             "play",
