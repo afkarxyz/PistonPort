@@ -492,22 +492,48 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         .gap(14.0)
         .fill(kit.c.layer_01);
     if app.page == Page::Garage {
-        let play_row = row().center_y().gap(8.0).child(
-            action(
+        let left = col()
+            .min_w(0.0)
+            .grow(1.0)
+            .gap(3.0)
+            .child(body(kit, &app.status).color(if app.error {
+                kit.c.danger.fg
+            } else {
+                kit.c.text_base
+            }))
+            .child(muted(
                 kit,
-                "play",
-                if app.playing { "Playing" } else { "Play" },
-                &icons::PLAY,
-                (!app.busy).then_some(Message::Play),
-                ButtonVariant::Contrast,
-            )
-            .w(140.0),
-        );
-        let mut play = col().center().gap(4.0).child(play_row);
-        if app.busy {
-            play = play.child(body(kit, &app.status).color(kit.c.text_muted));
-        }
-        return frame.center().child(play);
+                format!(
+                    "{}  ·  {}  ·  {}  ·  Vulkan",
+                    SIZES
+                        .iter()
+                        .find(|s| s.0 == app.settings.size)
+                        .map(|s| s.1)
+                        .unwrap_or(&app.settings.size),
+                    app.settings.rate.1,
+                    app.settings.mode.1,
+                ),
+            ));
+        let play = action(
+            kit,
+            "play",
+            if app.playing { "Playing" } else { "Play" },
+            &icons::PLAY,
+            (!app.busy).then_some(Message::Play),
+            ButtonVariant::Contrast,
+        )
+        .w(140.0);
+        let right = el().min_w(0.0).grow(1.0);
+        return row()
+            .key("footer")
+            .h(74.0)
+            .px(22.0)
+            .center_y()
+            .gap(14.0)
+            .fill(kit.c.layer_01)
+            .child(left)
+            .child(play)
+            .child(right);
     }
     let status = col()
         .min_w(0.0)
