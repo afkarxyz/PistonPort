@@ -344,6 +344,18 @@ class BootHelpersTest(unittest.TestCase):
                 else:
                     os.environ["PISTONPORT_ALLOW_LOCAL_UPDATE"] = old_allow
 
+    def test_nptoolkit_trophy_sync_patch(self):
+        image = bytearray(0x194CC00)
+        image[0x194C9A2 : 0x194C9A9] = bytes.fromhex("41 80 7e 10 00 75 6c")
+        image[0x194CB68 : 0x194CB73] = bytes.fromhex("41 80 7f 10 00 0f 85 9a 00 00 00")
+        piston_prepare.patch_nptoolkit_trophy_sync(image)
+        self.assertEqual(
+            image[0x194C9A2 : 0x194C9A9], bytes.fromhex("41 80 7e 10 00 90 90")
+        )
+        self.assertEqual(
+            image[0x194CB68 : 0x194CB73], bytes.fromhex("41 80 7f 10 00 90 90 90 90 90 90")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

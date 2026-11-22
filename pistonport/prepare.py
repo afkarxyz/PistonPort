@@ -390,6 +390,32 @@ def patch_graphics(
         _replace_bytes(image, 0xE3C4AE, b'size="2.2G"', xml_size, "GPU Data heap XML")
 
 
+def patch_nptoolkit_trophy_sync(image):
+    # Cars 3's Trophy Processor thread (0x43d20) allocates libSceNpToolkit2
+    # Response structs on the stack (-88(%rbp)), calls unlockTrophy /
+    # registerTrophyPack without clearing param.isAsync, and immediately
+    # destroys the stack Response and yields. On Windows x64, sched_yield()'s
+    # return address lands at that exact stack slot (-88(%rbp)), so when the
+    # NpToolkit2 worker thread later writes {returnCode, state=0} (e.g.
+    # 0x0000000080551609 for TROPHY_ALREADY_UNLOCKED), sched_yield() returns
+    # into 0x80551609 and faults. Force both Trophy calls to wait for
+    # Response::isPending() before returning.
+    _replace_bytes(
+        image,
+        0x194C9A2,
+        bytes.fromhex("41 80 7e 10 00 75 6c"),
+        bytes.fromhex("41 80 7e 10 00 90 90"),
+        "NpToolkit2 Trophy unlockTrophy sync wait",
+    )
+    _replace_bytes(
+        image,
+        0x194CB68,
+        bytes.fromhex("41 80 7f 10 00 0f 85 9a 00 00 00"),
+        bytes.fromhex("41 80 7f 10 00 90 90 90 90 90 90"),
+        "NpToolkit2 Trophy registerTrophyPack sync wait",
+    )
+
+
 def apply_graphics_patches(
     base_path,
     output_path,
@@ -416,6 +442,8 @@ def apply_graphics_patches(
         high_lod=high_lod,
         bloom=bloom,
     )
+    if len(image) >= 0x194CB73:
+        patch_nptoolkit_trophy_sync(image)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = output_path.with_name(f"{output_path.name}.{os.getpid()}.tmp")
     with tmp.open("wb") as handle:

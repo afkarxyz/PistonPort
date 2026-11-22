@@ -50,7 +50,7 @@ except ModuleNotFoundError:
     from pkg_reader import Package, trophy_metadata
     from save_slots import TITLE, active_root, sfo_fields
 
-PATCH_VARIANT_VERSION = "v3"
+PATCH_VARIANT_VERSION = "v4"
 GITHUB_RELEASES_API = "https://api.github.com/repos/afkarxyz/PistonPort/releases/latest"
 GITHUB_RELEASES_PAGE = "https://github.com/afkarxyz/PistonPort/releases"
 VALID_FPS_LIMITS = {"0", "30", "60", "100", "120", "144", "180", "240"}
