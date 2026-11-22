@@ -304,7 +304,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .items_stretch()
         .child(header)
         .child(page);
-    if app.page != Page::Welcome {
+    if app.page != Page::Welcome && app.page != Page::Garage {
         shell = shell.child(footer(app, &kit, &mut overlays));
     }
     if let Some(notice) = &app.toast {
@@ -479,7 +479,36 @@ fn garage(app: &App, kit: &Kit) -> El {
     } else {
         page = page.center().child(heading(kit, "Cars 3: Driven to Win"));
     }
-    page
+    let play_btn = action(
+        kit,
+        "play",
+        if app.playing { "Playing" } else { "Play" },
+        &icons::PLAY,
+        (!app.busy).then_some(Message::Play),
+        ButtonVariant::Contrast,
+    )
+    .w(176.0)
+    .h(48.0);
+    let mut cta = col().items_end().gap(10.0).child(play_btn);
+    if app.busy {
+        cta = cta.child(
+            row()
+                .px(12.0)
+                .py(6.0)
+                .radius(999.0)
+                .fill(kit.c.layer_01.alpha(0.84))
+                .border(1.0, kit.c.border_muted)
+                .child(body(kit, &app.status).color(kit.c.text_base)),
+        );
+    }
+    let overlay = col()
+        .w_full()
+        .h_full()
+        .justify_center()
+        .items_end()
+        .pr(44.0)
+        .child(cta);
+    page.child(overlay)
 }
 
 fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
@@ -491,32 +520,6 @@ fn footer(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         .center_y()
         .gap(14.0)
         .fill(kit.c.layer_01);
-    if app.page == Page::Garage {
-        let mut left = row().min_w(0.0).grow(1.0).center_y();
-        if app.busy {
-            left = left.child(body(kit, &app.status).color(kit.c.text_muted));
-        }
-        let play = action(
-            kit,
-            "play",
-            if app.playing { "Playing" } else { "Play" },
-            &icons::PLAY,
-            (!app.busy).then_some(Message::Play),
-            ButtonVariant::Contrast,
-        )
-        .w(140.0);
-        let right = el().min_w(0.0).grow(1.0);
-        return row()
-            .key("footer")
-            .h(74.0)
-            .px(22.0)
-            .center_y()
-            .gap(14.0)
-            .fill(kit.c.layer_01)
-            .child(left)
-            .child(play)
-            .child(right);
-    }
     let status = col()
         .min_w(0.0)
         .grow(1.0)

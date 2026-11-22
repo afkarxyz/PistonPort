@@ -1033,20 +1033,14 @@ impl App {
             Message::BackdropsReady(source, list) => {
                 if source == self.saved_source {
                     self.backdrops = list;
-                    let wanted = std::env::var("PISTONPORT_SMOKE_BACKDROP")
-                        .ok()
-                        .filter(|v| !v.is_empty())
-                        .unwrap_or_else(|| {
-                            profile::read(&self.paths.profile.join("garage-backdrop.txt"))
-                        });
-                    if !wanted.is_empty() && wanted != "cover" {
-                        if let Some(pos) = self.backdrops.iter().position(|b| b.id == wanted) {
-                            self.apply_backdrop_index(pos + 1, false, None);
-                        } else if !self.backdrops.is_empty() {
-                            self.schedule_backdrop_timer();
-                        }
-                    } else if !self.backdrops.is_empty() {
-                        self.schedule_backdrop_timer();
+                    if !self.backdrops.is_empty() {
+                        let start = std::env::var("PISTONPORT_SMOKE_BACKDROP")
+                            .ok()
+                            .filter(|v| !v.is_empty())
+                            .and_then(|wanted| self.backdrops.iter().position(|b| b.id == wanted))
+                            .map(|pos| pos + 1)
+                            .unwrap_or(1);
+                        self.apply_backdrop_index(start, false, None);
                     }
                 }
             }
@@ -1059,8 +1053,8 @@ impl App {
                     && !self.busy
                     && !self.backdrop_loading
                 {
-                    let total = self.backdrops.len() + 1;
-                    let next = (self.backdrop_index + 1) % total;
+                    let count = self.backdrops.len();
+                    let next = (self.backdrop_index % count) + 1;
                     self.apply_backdrop_index(next, false, Some(tx));
                 } else {
                     self.schedule_backdrop_timer();
