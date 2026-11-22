@@ -243,9 +243,9 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
     if app.page != Page::Welcome {
         let tabs = [
             ("Garage", "garage", &icons::FLAG, Page::Garage),
-            ("Saves", "saves", &icons::SAVE, Page::Saves),
             ("Settings", "settings", &icons::SETTINGS, Page::Settings),
             ("Controls", "controls", &icons::GAMEPAD, Page::Controls),
+            ("Saves", "saves", &icons::SAVE, Page::Saves),
             ("Trophies", "trophies", &icons::TROPHY, Page::Trophies),
         ];
         let nav = row()

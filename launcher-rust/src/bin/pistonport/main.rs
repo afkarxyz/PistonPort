@@ -1074,9 +1074,9 @@ impl App {
             Message::Gamepad(action) if !self.busy && self.page != Page::Welcome => {
                 let order = [
                     Page::Garage,
-                    Page::Saves,
                     Page::Settings,
                     Page::Controls,
+                    Page::Saves,
                     Page::Trophies,
                 ];
                 match action {
