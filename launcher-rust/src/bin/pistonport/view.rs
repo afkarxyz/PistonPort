@@ -304,7 +304,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .items_stretch()
         .child(header)
         .child(page);
-    if app.page != Page::Welcome && app.page != Page::Garage {
+    if app.page != Page::Welcome {
         shell = shell.child(footer(app, &kit, &mut overlays));
     }
     if let Some(notice) = &app.toast {
@@ -500,25 +500,13 @@ fn garage(app: &App, kit: &Kit) -> El {
     }
     .w(176.0)
     .h(48.0);
-    let mut cta = col().items_end().gap(10.0).child(play_btn);
-    if app.busy {
-        cta = cta.child(
-            row()
-                .px(12.0)
-                .py(6.0)
-                .radius(999.0)
-                .fill(kit.c.layer_01.alpha(0.84))
-                .border(1.0, kit.c.border_muted)
-                .child(body(kit, &app.status).color(kit.c.text_base)),
-        );
-    }
     let overlay = col()
         .w_full()
         .h_full()
         .justify_center()
         .items_end()
         .pr(44.0)
-        .child(cta);
+        .child(play_btn);
     page.child(overlay)
 }
 
