@@ -38,7 +38,7 @@ Choose 30, 60, 100, 120, 144, 180, 240 or Unlimited in Settings. Unlimited can p
 | Engine frames | 901 | 3,901 | 6,741 |
 | Frames per real second | 30.00 | 59.99 | 192.32 |
 
-Measured on a Core i9-13900K and RTX 4070 SUPER with 1920×1080 output. The 60 FPS build recorded 60.0 FPS in all 13 five-second windows and a worst frame of 17.2 ms. A matched full-throttle run from the start stripe to a trackside flag took about 5.02 seconds at 30 FPS and 5.10 seconds at 60 FPS. SPARTAN_FRAME_STATS=1 enables frame-pacing reports in native-last.log. [60 FPS capture](../docs/images/pistonport/Fireball-Beach-Native-60FPS.png) · [60 FPS samples](benchmarks/Fireball-Beach-Native-60FPS.csv) · [30 FPS samples](benchmarks/Fireball-Beach-Native-FPS.csv)
+Measured on a Core i9-13900K and RTX 4070 SUPER with 1920×1080 output. The 60 FPS build recorded 60.0 FPS in all 13 five-second windows and a worst frame of 17.2 ms. A matched full-throttle run from the start stripe to a trackside flag took about 5.02 seconds at 30 FPS and 5.10 seconds at 60 FPS. SPARTAN_FRAME_STATS=1 enables frame-pacing reports in native-last.log. [60 FPS samples](benchmarks/Fireball-Beach-Native-60FPS.csv) · [30 FPS samples](benchmarks/Fireball-Beach-Native-FPS.csv)
 
 ## Building
 

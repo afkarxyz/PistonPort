@@ -10,7 +10,7 @@ An unofficial native Windows x64 port of *Cars 3: Driven to Win* (PS4).
 
 You need a Vulkan-capable graphics driver and your own PS4 copy of the game (**CUSA07027 v01.00**). Extract the entire ZIP, open `PistonPort.exe`, and choose a playable PKG or an extracted game folder. Click **Play**.
 
-[Player Guide](pistonport/launcher/QUICKSTART.md) · [Technical Notes & Build](pistonport/README.md) · [Settings Screenshot](docs/images/pistonport/PistonPort-Settings.png) · [Gameplay Screenshot](docs/images/pistonport/PistonPort-Fireball-Beach.png) · [Ultrawide Screenshot](docs/images/pistonport/PistonPort-Ultrawide.png)
+[Player Guide](pistonport/launcher/QUICKSTART.md) · [Technical Notes & Build](pistonport/README.md) · [Settings Screenshot](docs/images/pistonport/PistonPort-Settings.png) · [Gameplay Screenshot](docs/images/pistonport/PistonPort-Gameplay.jpg) · [Ultrawide Screenshot](docs/images/pistonport/PistonPort-Ultrawide.jpg)
 
 ## Credits
 
