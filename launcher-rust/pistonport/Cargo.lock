@@ -2207,7 +2207,7 @@ dependencies = [
 
 [[package]]
 name = "pistonport"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "fs2",
  "image",
