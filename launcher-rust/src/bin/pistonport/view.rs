@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use rune::{
-    Align, Cx, Edge, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair,
+    Align, Cx, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair,
     SurfaceFit, TextStyle, Transition, col, el, row, text,
 };
 use astryx_rune::native_ui::{
-    Loader, Placement, Select, SelectAppearance, TextInput, ToastRegion,
+    Loader, Placement, Select, SelectAppearance, TextInput, Toast, ToastRegion,
 };
-use astryx_rune::{Button, Size, Theme, Variant, icon_button};
+use astryx_rune::{BadgeColor, Button, Size, Theme, Variant, badge, icon_button};
 
 type Kit = Theme;
 
@@ -167,34 +167,6 @@ fn piston_button(
     disabled: bool,
     on_press: Option<Box<dyn Fn(&mut App, &mut rune::Tx) + 'static>>,
 ) -> El {
-    let label_str: String = label.into();
-    if variant == ButtonVariant::Danger {
-        let red = rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg);
-        let red_hover = rune::color::hex("#b42318").unwrap_or(red);
-        let red_press = rune::color::hex("#912018").unwrap_or(red_hover);
-        let mut btn = row()
-            .key(key.into())
-            .role("button")
-            .label(label_str.clone())
-            .h(34.0)
-            .px(14.0)
-            .gap(8.0)
-            .center()
-            .radius(kit.radius.md)
-            .fill(red);
-        if let Some(ic) = glyph {
-            btn = btn.child(rune::icon(ic, 16.0).color(rune::Color::WHITE));
-        }
-        btn = btn.child(text(label_str).font(kit.ty.ui_medium).color(rune::Color::WHITE));
-        if disabled {
-            return btn.opacity(0.45).focusable(false);
-        }
-        btn = btn.hover(red_hover).press(red_press).focusable(true);
-        if let Some(cb) = on_press {
-            btn = btn.on_press_tx(move |app: &mut App, tx| cb(app, tx));
-        }
-        return btn;
-    }
     let astryx_variant = match variant {
         ButtonVariant::Contrast => Variant::Primary,
         ButtonVariant::Neutral => Variant::Secondary,
@@ -205,7 +177,7 @@ fn piston_button(
         ControlSize::Regular => Size::Small,
         ControlSize::Large => Size::Medium,
     };
-    let mut btn = Button::new(label_str)
+    let mut btn = Button::new(label)
         .variant(astryx_variant)
         .size(astryx_size)
         .disabled(disabled);
@@ -224,7 +196,7 @@ fn piston_icon_button(
     label: impl Into<String>,
     glyph: &'static Icon,
     neutral: bool,
-    danger_hover: bool,
+    danger: bool,
     size: ControlSize,
     on_press: impl Fn(&mut App, &mut rune::Tx) + 'static,
 ) -> El {
@@ -232,21 +204,19 @@ fn piston_icon_button(
         ControlSize::Regular => Size::Small,
         ControlSize::Large => Size::Medium,
     };
-    let btn = icon_button(label, glyph)
-        .variant(if neutral {
-            Variant::Secondary
-        } else {
-            Variant::Ghost
-        })
+    let variant = if danger {
+        Variant::Destructive
+    } else if neutral {
+        Variant::Secondary
+    } else {
+        Variant::Ghost
+    };
+    icon_button(label, glyph)
+        .variant(variant)
         .size(astryx_size)
         .on_press_tx(on_press)
         .build(kit)
-        .key(key.into());
-    if danger_hover {
-        btn.hover(rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg))
-    } else {
-        btn
-    }
+        .key(key.into())
 }
 
 fn action(
@@ -282,12 +252,8 @@ fn caption(kit: &Kit, key: &str, label: &str, glyph: &'static Icon, message: Mes
 }
 
 pub fn view(app: &App, cx: &mut Cx<App>) -> El {
-    let mut kit = Theme::neutral(true);
+    let kit = Theme::neutral(true);
     kit.configure(cx);
-    kit.kit.glyph.chevron_down = &icons::CHEVRON_DOWN;
-    kit.kit.glyph.chevron_up = &icons::CHEVRON_UP;
-    kit.kit.glyph.check_small = &icons::CHECK;
-    kit.kit.glyph.close = &icons::CLOSE;
     let mut overlays = Vec::new();
     let assets = app.assets.as_ref();
     let brand = row()
@@ -415,93 +381,24 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
 }
 
 fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
-    let c = &kit.c;
     let id = notice.id;
-    let lead = if notice.error {
-        rune::icon(&icons::ALERT, 16.0).color(c.danger.fg)
-    } else {
-        rune::icon(&icons::CHECK, 16.0).color(c.success.fg)
-    };
-    let mut content = col()
-        .key("content")
-        .shrink()
-        .min_w(0.0)
-        .max_w(276.0)
-        .gap(4.0)
-        .a11y_hidden()
-        .child(
-            text(notice.title.clone())
-                .key("title")
-                .font(TextStyle {
-                    line_height: 20.0,
-                    ..kit.ty.ui_medium
-                })
-                .color(c.text_base)
-                .wrap_anywhere(),
-        );
-    let described = notice.detail.clone().unwrap_or_default();
-    if let Some(detail) = &notice.detail {
-        content = content.child(
-            text(detail.clone())
-                .key("description")
-                .font(kit.ty.ui)
-                .color(c.text_muted)
-                .wrap_anywhere(),
-        );
-    }
-    let close = piston_icon_button(
-        kit,
-        format!("toast-close-{id}"),
-        "Close",
-        kit.glyph.close,
-        false,
-        false,
-        ControlSize::Regular,
-        move |app: &mut App, _| {
+    let mut toast = Toast::new(format!("toast-{id}"), notice.title.clone()).on_close(
+        move |app: &mut App| {
             if app.toast.as_ref().is_some_and(|t| t.id == id) {
                 app.toast = None;
             }
         },
     );
-    let top = row()
-        .key("top")
-        .min_w(0.0)
-        .gap(12.0)
-        .items_start()
-        .child(el().key("icon").size(16.0, 20.0).center().child(lead).a11y_hidden())
-        .child(content)
-        .child(close);
-    let mut root = col()
-        .key(format!("toast-{id}"))
-        .role("status")
-        .label(notice.title.clone())
-        .description(described)
-        .max_w(360.0)
-        .padding(12.0)
-        .gap(10.0)
-        .radius(8.0)
-        .clip_rounded(8.0)
-        .fill(c.layer_01)
-        .border(1.0, c.border_muted)
-        .child(top);
-    if notice.crash_action && !app.busy {
-        let action_btn = piston_button(
-            kit,
-            format!("toast-crash-{id}"),
-            "Copy Crash Report",
-            None,
-            ButtonVariant::Neutral,
-            ControlSize::Regular,
-            false,
-            Some(Box::new(move |app: &mut App, tx| {
-                app.toast = None;
-                app.update(Message::CopyCrashReport, tx);
-            })),
-        );
-        root = root.child(row().key("actions").pl(28.0).gap(8.0).flex_wrap().child(action_btn));
+    if let Some(detail) = &notice.detail {
+        toast = toast.description(detail.clone());
     }
-    root.transition(Transition::move_edge(Edge::Bottom))
-        .motion(Spring::new(0.28, 0.0))
+    if notice.crash_action && !app.busy {
+        toast = toast.action(kit, "Copy Crash Report", false, move |app: &mut App, tx| {
+            app.toast = None;
+            app.update(Message::CopyCrashReport, tx);
+        });
+    }
+    toast.build(kit)
 }
 
 fn source_actions(app: &App, kit: &Kit) -> El {
@@ -731,7 +628,7 @@ fn selection<T: Clone + 'static>(
             width.max(160.0)
         });
     }
-    trigger.fill(kit.c.bg_button_neutral)
+    trigger
 }
 
 fn page_frame(kit: &Kit, key: &str, title: &str, actions: El) -> El {
@@ -1636,12 +1533,8 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
         "Use Save"
     };
     let control = if app.selected.id == slot.id {
-        row()
+        badge(kit, "Active", BadgeColor::Green)
             .key(format!("active-save-{}", slot.id))
-            .center_y()
-            .gap(6.0)
-            .child(rune::icon(&icons::CHECK, 15.0).color(kit.c.success.fg))
-            .child(medium(kit, "Active").color(kit.c.success.fg))
             .transition(enter_only(
                 Transition::scale(0.94).combined(Transition::opacity()),
             ))

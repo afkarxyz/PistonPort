@@ -26,12 +26,9 @@ lucide!(PACKAGE, "package");
 lucide!(FOLDER, "folder-open");
 lucide!(UPLOAD, "upload");
 lucide!(RESET, "rotate-ccw");
-lucide!(CHEVRON_UP, "chevron-up");
-lucide!(CHEVRON_DOWN, "chevron-down");
 lucide!(CHECK, "check");
 lucide!(LOCK, "lock");
 lucide!(COFFEE, "coffee");
-lucide!(ALERT, "circle-alert");
 
 pub static STOP: Icon = Icon {
     name: "square",
