@@ -618,9 +618,7 @@ fn selection<T: Clone + 'static>(
         .build(kit, overlays);
     // Rune mounts the menu surface last. Widen it for the more descriptive choices.
     if let Some(menu) = overlays[first_overlay..].last_mut() {
-        menu.set_min_w(if key == "save-slot" {
-            365.0
-        } else if matches!(key, "gpu-adapter" | "display-monitor") {
+        menu.set_min_w(if matches!(key, "gpu-adapter" | "display-monitor") {
             280.0
         } else if matches!(key, "compat-mode" | "render-resolution") {
             215.0
@@ -1410,9 +1408,9 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         )
 }
 
-fn scroll(_kit: &Kit, key: &str, content: El) -> El {
-    col()
-        .key(key.to_owned())
+fn scroll(kit: &Kit, key: &str, content: El) -> El {
+    let viewport = col()
+        .key("scroll")
         .w_full()
         .grow(1.0)
         .min_h(0.0)
@@ -1420,7 +1418,11 @@ fn scroll(_kit: &Kit, key: &str, content: El) -> El {
             stick_bottom: false,
         })
         .scroll_fade(ScrollFade::feather(18.0))
-        .child(content.pr(14.0))
+        .child(content.pr(14.0));
+    astryx_rune::with_scrollbar(kit, key, viewport)
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
 }
 
 fn control_columns(action: El, keyboard: El, playstation: El, xbox: El) -> El {
@@ -1533,8 +1535,10 @@ fn save_row(app: &App, kit: &Kit, slot: &Slot, detail: &str) -> El {
         "Use Save"
     };
     let control = if app.selected.id == slot.id {
-        badge(kit, "Active", BadgeColor::Green)
+        row()
             .key(format!("active-save-{}", slot.id))
+            .center_y()
+            .child(badge(kit, "Active", BadgeColor::Green))
             .transition(enter_only(
                 Transition::scale(0.94).combined(Transition::opacity()),
             ))
