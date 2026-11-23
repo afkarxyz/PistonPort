@@ -5,8 +5,7 @@ use rune::{
     SurfaceFit, TextStyle, Transition, col, el, row, text,
 };
 use rune_kit::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, Loader, Placement,
-    ScrollBar, Select, SelectAppearance, Switch, TextInput, ToastRegion,
+    Kit, Loader, Placement, ScrollBar, Select, SelectAppearance, Switch, TextInput, ToastRegion,
 };
 
 use crate::icons;
@@ -141,6 +140,151 @@ fn art(image: Option<&Image>, width: f32, height: f32) -> El {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ButtonVariant {
+    Contrast,
+    Neutral,
+    GhostMuted,
+    Danger,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControlSize {
+    Regular,
+    Large,
+}
+
+fn piston_button(
+    kit: &Kit,
+    key: impl Into<String>,
+    label: impl Into<String>,
+    glyph: Option<&'static Icon>,
+    variant: ButtonVariant,
+    size: ControlSize,
+    disabled: bool,
+    on_press: Option<Box<dyn Fn(&mut App, &mut rune::Tx) + 'static>>,
+) -> El {
+    let label_str: String = label.into();
+    let (h, px, gap, icon_sz, font) = match size {
+        ControlSize::Regular => (28.0, 11.0, 6.0, 14.0, TextStyle::new(13.0, 550.0)),
+        ControlSize::Large => (34.0, 13.0, 7.0, 15.0, TextStyle::new(13.5, 580.0)),
+    };
+    let (bg, bg_hover, bg_press, fg, border) = match variant {
+        ButtonVariant::Contrast => (
+            rune::color::hex("#f3f4f6").unwrap_or(rune::Color::WHITE),
+            rune::Color::WHITE,
+            rune::color::hex("#d8dce3").unwrap_or(rune::Color::WHITE),
+            rune::color::hex("#111318").unwrap_or(rune::Color::BLACK),
+            None,
+        ),
+        ButtonVariant::Neutral => (
+            rune::color::hex("#262932").unwrap_or(kit.c.bg_button_neutral),
+            rune::color::hex("#323642").unwrap_or(kit.c.bg_button_neutral),
+            rune::color::hex("#1e2128").unwrap_or(kit.c.bg_button_neutral),
+            rune::color::hex("#f1f3f5").unwrap_or(kit.c.text_base),
+            Some(rune::Color::WHITE.alpha(0.08)),
+        ),
+        ButtonVariant::GhostMuted => (
+            rune::Color::TRANSPARENT,
+            rune::Color::WHITE.alpha(0.07),
+            rune::Color::WHITE.alpha(0.12),
+            rune::color::hex("#9ea4b2").unwrap_or(kit.c.text_muted),
+            None,
+        ),
+        ButtonVariant::Danger => (
+            rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg),
+            rune::color::hex("#b42318").unwrap_or(kit.c.danger.fg),
+            rune::color::hex("#912018").unwrap_or(kit.c.danger.fg),
+            rune::Color::WHITE,
+            None,
+        ),
+    };
+    let mut btn = row()
+        .key(key.into())
+        .role("button")
+        .label(label_str.clone())
+        .h(h)
+        .px(px)
+        .gap(gap)
+        .center()
+        .radius(8.0)
+        .fill(bg);
+    if let Some(bc) = border {
+        btn = btn.border(1.0, bc);
+    }
+    if let Some(ic) = glyph {
+        btn = btn.child(rune::icon(ic, icon_sz).color(fg));
+    }
+    btn = btn.child(text(label_str).font(font).color(fg));
+    if disabled {
+        btn.opacity(0.45).focusable(false)
+    } else {
+        btn = btn.hover(bg_hover).press(bg_press).focusable(true);
+        if let Some(cb) = on_press {
+            btn = btn.on_press_tx(move |app: &mut App, tx| cb(app, tx));
+        }
+        btn
+    }
+}
+
+fn piston_icon_button(
+    kit: &Kit,
+    key: impl Into<String>,
+    label: impl Into<String>,
+    glyph: &'static Icon,
+    neutral: bool,
+    danger_hover: bool,
+    size: ControlSize,
+    on_press: impl Fn(&mut App, &mut rune::Tx) + 'static,
+) -> El {
+    let (dim, icon_sz) = match size {
+        ControlSize::Regular => (26.0, 14.0),
+        ControlSize::Large => (34.0, 16.0),
+    };
+    let (bg, bg_hover, bg_press, fg, border) = if neutral {
+        (
+            rune::color::hex("#262932").unwrap_or(kit.c.bg_button_neutral),
+            if danger_hover {
+                rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg)
+            } else {
+                rune::color::hex("#323642").unwrap_or(kit.c.bg_button_neutral)
+            },
+            if danger_hover {
+                rune::color::hex("#b42318").unwrap_or(kit.c.danger.fg)
+            } else {
+                rune::color::hex("#1e2128").unwrap_or(kit.c.bg_button_neutral)
+            },
+            rune::color::hex("#f1f3f5").unwrap_or(kit.c.text_base),
+            Some(rune::Color::WHITE.alpha(0.08)),
+        )
+    } else {
+        (
+            rune::Color::TRANSPARENT,
+            rune::Color::WHITE.alpha(0.08),
+            rune::Color::WHITE.alpha(0.14),
+            rune::color::hex("#9ea4b2").unwrap_or(kit.c.text_muted),
+            None,
+        )
+    };
+    let mut btn = el()
+        .key(key.into())
+        .role("button")
+        .label(label.into())
+        .size(dim, dim)
+        .center()
+        .radius(8.0)
+        .fill(bg)
+        .hover(bg_hover)
+        .press(bg_press)
+        .focusable(true)
+        .child(rune::icon(glyph, icon_sz).color(fg))
+        .on_press_tx(on_press);
+    if let Some(bc) = border {
+        btn = btn.border(1.0, bc);
+    }
+    btn
+}
+
 fn action(
     kit: &Kit,
     key: &str,
@@ -149,36 +293,28 @@ fn action(
     message: Option<Message>,
     variant: ButtonVariant,
 ) -> El {
-    let mut button = Button::new(label)
-        .icon(glyph)
-        .variant(variant)
-        .control_size(ControlSize::Large)
-        .disabled(message.is_none());
-    if let Some(message) = message {
-        button = button.on_press_tx(move |app: &mut App, tx| app.update(message.clone(), tx));
-    }
-    button.build(kit).key(key.to_owned())
+    let disabled = message.is_none();
+    let cb: Option<Box<dyn Fn(&mut App, &mut rune::Tx) + 'static>> = message.map(|m| {
+        let f: Box<dyn Fn(&mut App, &mut rune::Tx) + 'static> =
+            Box::new(move |app: &mut App, tx| app.update(m.clone(), tx));
+        f
+    });
+    piston_button(kit, key, label, Some(glyph), variant, ControlSize::Large, disabled, cb)
 }
 
 fn caption(kit: &Kit, key: &str, label: &str, glyph: &'static Icon, message: Message) -> El {
     let danger = matches!(message, Message::Close);
     let muted_icon = matches!(message, Message::OpenCoffee);
-    let button = IconButton::new(glyph)
-        .variant(if muted_icon {
-            IconButtonVariant::GhostMuted
-        } else {
-            IconButtonVariant::Neutral
-        })
-        .control_size(ControlSize::Large)
-        .label(label)
-        .on_press_tx(move |app: &mut App, tx| app.update(message.clone(), tx))
-        .build(kit)
-        .key(key.to_owned());
-    if danger {
-        button.hover(kit.c.danger.fg.alpha(0.45))
-    } else {
-        button
-    }
+    piston_icon_button(
+        kit,
+        key,
+        label,
+        glyph,
+        !muted_icon,
+        danger,
+        ControlSize::Large,
+        move |app: &mut App, tx| app.update(message.clone(), tx),
+    )
 }
 
 pub fn view(app: &App, _: &mut Cx<App>) -> El {
@@ -218,15 +354,20 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
     {
         let url = update.url.clone();
         let asset_url = update.asset_url.clone();
-        let pill = Button::new(if app.installing_update {
+        let pill_label = if app.installing_update {
             "Updating…".to_owned()
         } else {
             format!("Update {}", update.tag)
-        })
-            .icon(&icons::UPLOAD)
-            .variant(ButtonVariant::Contrast)
-            .disabled(app.installing_update)
-            .on_press_tx(move |app: &mut App, tx| {
+        };
+        let pill = piston_button(
+            &kit,
+            "header-update-pill",
+            pill_label,
+            Some(&icons::UPLOAD),
+            ButtonVariant::Contrast,
+            ControlSize::Regular,
+            app.installing_update,
+            Some(Box::new(move |app: &mut App, tx| {
                 if app.page == Page::Settings && app.settings_tab == SettingsTab::System {
                     app.update(Message::InstallUpdate(asset_url.clone(), url.clone()), tx);
                 } else {
@@ -234,10 +375,9 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
                     app.settings_tab = SettingsTab::System;
                     app.menu = None;
                 }
-            })
-            .build(&kit)
-            .key("header-update-pill")
-            .transition(Transition::scale(0.92).combined(Transition::opacity()));
+            })),
+        )
+        .transition(Transition::scale(0.92).combined(Transition::opacity()));
         header = header.child(pill);
     }
     header = header.child(el().grow(1.0).h_full().window_drag());
@@ -349,16 +489,20 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
                 .wrap_anywhere(),
         );
     }
-    let close = IconButton::new(kit.glyph.close)
-        .label("Close")
-        .variant(IconButtonVariant::Ghost)
-        .control_size(ControlSize::Regular)
-        .on_press(move |app: &mut App| {
+    let close = piston_icon_button(
+        kit,
+        format!("toast-close-{id}"),
+        "Close",
+        kit.glyph.close,
+        false,
+        false,
+        ControlSize::Regular,
+        move |app: &mut App, _| {
             if app.toast.as_ref().is_some_and(|t| t.id == id) {
                 app.toast = None;
             }
-        })
-        .build(kit);
+        },
+    );
     let top = row()
         .key("top")
         .min_w(0.0)
@@ -381,14 +525,19 @@ fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
         .border(1.0, c.border_muted)
         .child(top);
     if notice.crash_action && !app.busy {
-        let action_btn = Button::new("Copy Crash Report")
-            .variant(ButtonVariant::Neutral)
-            .control_size(ControlSize::Regular)
-            .on_press_tx(move |app: &mut App, tx| {
+        let action_btn = piston_button(
+            kit,
+            format!("toast-crash-{id}"),
+            "Copy Crash Report",
+            None,
+            ButtonVariant::Neutral,
+            ControlSize::Regular,
+            false,
+            Some(Box::new(move |app: &mut App, tx| {
                 app.toast = None;
                 app.update(Message::CopyCrashReport, tx);
-            })
-            .build(kit);
+            })),
+        );
         root = root.child(row().key("actions").pl(28.0).gap(8.0).flex_wrap().child(action_btn));
     }
     root.transition(Transition::move_edge(Edge::Bottom))
@@ -476,33 +625,23 @@ fn garage(app: &App, kit: &Kit) -> El {
                 .motion(Spring::new(0.65, 0.0)),
         );
     let play_btn = if app.playing {
-        let red = rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg);
-        let red_hover = rune::color::hex("#b42318").unwrap_or(red);
-        let red_press = rune::color::hex("#912018").unwrap_or(red_hover);
         let label = if app.stopping { "Stopping…" } else { "Stop" };
-        let mut btn = row()
-            .key("stop")
-            .role("button")
-            .label(label)
-            .w(176.0)
-            .h(48.0)
-            .center()
-            .gap(8.0)
-            .radius(8.0)
-            .fill(red)
-            .hover(red_hover)
-            .press(red_press)
-            .focusable(true)
-            .child(rune::icon(&icons::STOP, 16.0).color(rune::Color::WHITE))
-            .child(
-                text(label)
-                    .font(kit.ty.ui_medium)
-                    .color(rune::Color::WHITE),
-            );
-        if !app.stopping {
-            btn = btn.on_press_tx(|app: &mut App, tx| app.update(Message::StopGame, tx));
-        }
-        btn
+        piston_button(
+            kit,
+            "stop",
+            label,
+            Some(&icons::STOP),
+            ButtonVariant::Danger,
+            ControlSize::Large,
+            false,
+            (!app.stopping).then(|| {
+                let f: Box<dyn Fn(&mut App, &mut rune::Tx) + 'static> =
+                    Box::new(|app: &mut App, tx| app.update(Message::StopGame, tx));
+                f
+            }),
+        )
+        .w(176.0)
+        .h(48.0)
     } else {
         action(
             kit,
@@ -688,13 +827,20 @@ fn toggle_switch(
 }
 
 fn preset_button(kit: &Kit, key: &str, label: &str, preset: Preset, active: bool) -> El {
-    let mut button = Button::new(label)
-        .variant(ButtonVariant::Neutral)
-        .disabled(!active);
-    if active {
-        button = button.on_press_tx(move |app: &mut App, tx| app.update(Message::Preset(preset), tx));
-    }
-    button.build(kit).key(key.to_owned())
+    piston_button(
+        kit,
+        key,
+        label,
+        None,
+        ButtonVariant::Neutral,
+        ControlSize::Regular,
+        !active,
+        active.then(|| {
+            let f: Box<dyn Fn(&mut App, &mut rune::Tx) + 'static> =
+                Box::new(move |app: &mut App, tx| app.update(Message::Preset(preset), tx));
+            f
+        }),
+    )
 }
 
 fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
@@ -743,11 +889,18 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
             } else {
                 ButtonVariant::GhostMuted
             };
-            Button::new(label)
-                .variant(variant)
-                .on_press_tx(move |app: &mut App, tx| app.update(Message::SettingsTab(tab), tx))
-                .build(kit)
-                .key(key.to_owned())
+            piston_button(
+                kit,
+                key,
+                label,
+                None,
+                variant,
+                ControlSize::Regular,
+                false,
+                Some(Box::new(move |app: &mut App, tx| {
+                    app.update(Message::SettingsTab(tab), tx)
+                })),
+            )
         }));
 
     let content = match app.settings_tab {
