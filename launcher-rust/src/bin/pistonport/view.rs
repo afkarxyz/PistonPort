@@ -4,9 +4,12 @@ use rune::{
     Align, Cx, Edge, El, Icon, Image, ImageCache, ScrollFade, ScrollSpec, Spring, SpringPair,
     SurfaceFit, TextStyle, Transition, col, el, row, text,
 };
-use rune_kit::{
-    Kit, Loader, Placement, ScrollBar, Select, SelectAppearance, Switch, TextInput, ToastRegion,
+use astryx_rune::native_ui::{
+    Loader, Placement, Select, SelectAppearance, TextInput, ToastRegion,
 };
+use astryx_rune::{Button, Size, Theme, Variant, icon_button};
+
+type Kit = Theme;
 
 use crate::icons;
 use crate::profile::{
@@ -165,66 +168,54 @@ fn piston_button(
     on_press: Option<Box<dyn Fn(&mut App, &mut rune::Tx) + 'static>>,
 ) -> El {
     let label_str: String = label.into();
-    let (h, px, gap, icon_sz, font) = match size {
-        ControlSize::Regular => (28.0, 11.0, 6.0, 14.0, TextStyle::new(13.0, 550.0)),
-        ControlSize::Large => (34.0, 13.0, 7.0, 15.0, TextStyle::new(13.5, 580.0)),
-    };
-    let (bg, bg_hover, bg_press, fg, border) = match variant {
-        ButtonVariant::Contrast => (
-            rune::color::hex("#f3f4f6").unwrap_or(rune::Color::WHITE),
-            rune::Color::WHITE,
-            rune::color::hex("#d8dce3").unwrap_or(rune::Color::WHITE),
-            rune::color::hex("#111318").unwrap_or(rune::Color::BLACK),
-            None,
-        ),
-        ButtonVariant::Neutral => (
-            rune::color::hex("#262932").unwrap_or(kit.c.bg_button_neutral),
-            rune::color::hex("#323642").unwrap_or(kit.c.bg_button_neutral),
-            rune::color::hex("#1e2128").unwrap_or(kit.c.bg_button_neutral),
-            rune::color::hex("#f1f3f5").unwrap_or(kit.c.text_base),
-            Some(rune::Color::WHITE.alpha(0.08)),
-        ),
-        ButtonVariant::GhostMuted => (
-            rune::Color::TRANSPARENT,
-            rune::Color::WHITE.alpha(0.07),
-            rune::Color::WHITE.alpha(0.12),
-            rune::color::hex("#9ea4b2").unwrap_or(kit.c.text_muted),
-            None,
-        ),
-        ButtonVariant::Danger => (
-            rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg),
-            rune::color::hex("#b42318").unwrap_or(kit.c.danger.fg),
-            rune::color::hex("#912018").unwrap_or(kit.c.danger.fg),
-            rune::Color::WHITE,
-            None,
-        ),
-    };
-    let mut btn = row()
-        .key(key.into())
-        .role("button")
-        .label(label_str.clone())
-        .h(h)
-        .px(px)
-        .gap(gap)
-        .center()
-        .radius(8.0)
-        .fill(bg);
-    if let Some(bc) = border {
-        btn = btn.border(1.0, bc);
-    }
-    if let Some(ic) = glyph {
-        btn = btn.child(rune::icon(ic, icon_sz).color(fg));
-    }
-    btn = btn.child(text(label_str).font(font).color(fg));
-    if disabled {
-        btn.opacity(0.45).focusable(false)
-    } else {
-        btn = btn.hover(bg_hover).press(bg_press).focusable(true);
+    if variant == ButtonVariant::Danger {
+        let red = rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg);
+        let red_hover = rune::color::hex("#b42318").unwrap_or(red);
+        let red_press = rune::color::hex("#912018").unwrap_or(red_hover);
+        let mut btn = row()
+            .key(key.into())
+            .role("button")
+            .label(label_str.clone())
+            .h(34.0)
+            .px(14.0)
+            .gap(8.0)
+            .center()
+            .radius(kit.radius.md)
+            .fill(red);
+        if let Some(ic) = glyph {
+            btn = btn.child(rune::icon(ic, 16.0).color(rune::Color::WHITE));
+        }
+        btn = btn.child(text(label_str).font(kit.ty.ui_medium).color(rune::Color::WHITE));
+        if disabled {
+            return btn.opacity(0.45).focusable(false);
+        }
+        btn = btn.hover(red_hover).press(red_press).focusable(true);
         if let Some(cb) = on_press {
             btn = btn.on_press_tx(move |app: &mut App, tx| cb(app, tx));
         }
-        btn
+        return btn;
     }
+    let astryx_variant = match variant {
+        ButtonVariant::Contrast => Variant::Primary,
+        ButtonVariant::Neutral => Variant::Secondary,
+        ButtonVariant::GhostMuted => Variant::Ghost,
+        ButtonVariant::Danger => Variant::Destructive,
+    };
+    let astryx_size = match size {
+        ControlSize::Regular => Size::Small,
+        ControlSize::Large => Size::Medium,
+    };
+    let mut btn = Button::new(label_str)
+        .variant(astryx_variant)
+        .size(astryx_size)
+        .disabled(disabled);
+    if let Some(ic) = glyph {
+        btn = btn.icon(ic);
+    }
+    if let Some(cb) = on_press {
+        btn = btn.on_press_tx(move |app: &mut App, tx| cb(app, tx));
+    }
+    btn.build(kit).key(key.into())
 }
 
 fn piston_icon_button(
@@ -237,52 +228,25 @@ fn piston_icon_button(
     size: ControlSize,
     on_press: impl Fn(&mut App, &mut rune::Tx) + 'static,
 ) -> El {
-    let (dim, icon_sz) = match size {
-        ControlSize::Regular => (26.0, 14.0),
-        ControlSize::Large => (34.0, 16.0),
+    let astryx_size = match size {
+        ControlSize::Regular => Size::Small,
+        ControlSize::Large => Size::Medium,
     };
-    let (bg, bg_hover, bg_press, fg, border) = if neutral {
-        (
-            rune::color::hex("#262932").unwrap_or(kit.c.bg_button_neutral),
-            if danger_hover {
-                rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg)
-            } else {
-                rune::color::hex("#323642").unwrap_or(kit.c.bg_button_neutral)
-            },
-            if danger_hover {
-                rune::color::hex("#b42318").unwrap_or(kit.c.danger.fg)
-            } else {
-                rune::color::hex("#1e2128").unwrap_or(kit.c.bg_button_neutral)
-            },
-            rune::color::hex("#f1f3f5").unwrap_or(kit.c.text_base),
-            Some(rune::Color::WHITE.alpha(0.08)),
-        )
+    let btn = icon_button(label, glyph)
+        .variant(if neutral {
+            Variant::Secondary
+        } else {
+            Variant::Ghost
+        })
+        .size(astryx_size)
+        .on_press_tx(on_press)
+        .build(kit)
+        .key(key.into());
+    if danger_hover {
+        btn.hover(rune::color::hex("#d92d20").unwrap_or(kit.c.danger.fg))
     } else {
-        (
-            rune::Color::TRANSPARENT,
-            rune::Color::WHITE.alpha(0.08),
-            rune::Color::WHITE.alpha(0.14),
-            rune::color::hex("#9ea4b2").unwrap_or(kit.c.text_muted),
-            None,
-        )
-    };
-    let mut btn = el()
-        .key(key.into())
-        .role("button")
-        .label(label.into())
-        .size(dim, dim)
-        .center()
-        .radius(8.0)
-        .fill(bg)
-        .hover(bg_hover)
-        .press(bg_press)
-        .focusable(true)
-        .child(rune::icon(glyph, icon_sz).color(fg))
-        .on_press_tx(on_press);
-    if let Some(bc) = border {
-        btn = btn.border(1.0, bc);
+        btn
     }
-    btn
 }
 
 fn action(
@@ -317,17 +281,13 @@ fn caption(kit: &Kit, key: &str, label: &str, glyph: &'static Icon, message: Mes
     )
 }
 
-pub fn view(app: &App, _: &mut Cx<App>) -> El {
-    let mut kit = Kit::neutral(true);
-    // Give neutral buttons and dropdown triggers a smooth elevated fill without harsh borders.
-    kit.c.bg_button_neutral = rune::color::hex("#2a2d34").unwrap_or(kit.c.bg_button_neutral);
-    kit.c.hover = rune::Color::WHITE.alpha(0.08);
-    kit.c.pressed = rune::Color::WHITE.alpha(0.14);
-    kit.elevation.button_neutral = Vec::new();
-    kit.glyph.chevron_down = &icons::CHEVRON_DOWN;
-    kit.glyph.chevron_up = &icons::CHEVRON_UP;
-    kit.glyph.check_small = &icons::CHECK;
-    kit.glyph.close = &icons::CLOSE;
+pub fn view(app: &App, cx: &mut Cx<App>) -> El {
+    let mut kit = Theme::neutral(true);
+    kit.configure(cx);
+    kit.kit.glyph.chevron_down = &icons::CHEVRON_DOWN;
+    kit.kit.glyph.chevron_up = &icons::CHEVRON_UP;
+    kit.kit.glyph.check_small = &icons::CHECK;
+    kit.kit.glyph.close = &icons::CLOSE;
     let mut overlays = Vec::new();
     let assets = app.assets.as_ref();
     let brand = row()
@@ -451,7 +411,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
     if let Some(notice) = &app.toast {
         overlays.push(ToastRegion::new().toast(toast_card(app, &kit, notice)).build(&kit));
     }
-    rune_kit::root(shell, overlays)
+    astryx_rune::root(shell, overlays)
 }
 
 fn toast_card(app: &App, kit: &Kit, notice: &ToastNotice) -> El {
@@ -732,7 +692,7 @@ fn selection<T: Clone + 'static>(
     current: &str,
     options: Vec<(T, String)>,
     width: f32,
-    placement: Placement,
+    _placement: Placement,
     app: &App,
     kit: &Kit,
     overlays: &mut Vec<El>,
@@ -746,7 +706,6 @@ fn selection<T: Clone + 'static>(
         .current(Some(current))
         .width(width)
         .appearance(SelectAppearance::Field)
-        .placement(placement)
         .disabled(app.busy)
         .open(app.menu.as_deref() == Some(key))
         .on_toggle(move |app: &mut App| {
@@ -817,13 +776,42 @@ fn toggle_switch(
     active: bool,
     on_toggle: impl Fn(&mut App, &mut rune::Tx) + 'static,
 ) -> El {
-    Switch::new(checked)
-        .label(label)
-        .hide_label()
-        .disabled(!active)
-        .on_toggle_tx(on_toggle)
-        .build(kit)
+    let knob = if checked { 20.0 } else { 16.0 };
+    let x = if checked { 18.0 } else { 4.0 };
+    let track = el()
         .key(key.to_owned())
+        .role("switch")
+        .label(label.to_owned())
+        .size(40.0, 24.0)
+        .radius(12.0)
+        .checked(checked)
+        .focusable(active)
+        .focus_ring(2.0, 1.0, kit.c.border_focus)
+        .disabled(!active)
+        .motion(rune::tok::motion::SNAPPY)
+        .fill(if checked {
+            kit.color("accent")
+        } else {
+            kit.color("track")
+        })
+        .child(
+            el().key("thumb")
+                .size(knob, knob)
+                .radius(knob / 2.0)
+                .absolute(x, (24.0 - knob) / 2.0)
+                .motion(rune::tok::motion::SNAPPY)
+                .fill(if checked {
+                    kit.color("onAccent")
+                } else {
+                    kit.color("onDark")
+                })
+                .shadow(1.0, 2.0, rune::Color::BLACK.alpha(0.18)),
+        );
+    if !active {
+        track.layer_opacity(0.5)
+    } else {
+        track.on_press_tx(on_toggle)
+    }
 }
 
 fn preset_button(kit: &Kit, key: &str, label: &str, preset: Preset, active: bool) -> El {
@@ -1525,7 +1513,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
         )
 }
 
-fn scroll(kit: &Kit, key: &str, content: El) -> El {
+fn scroll(_kit: &Kit, key: &str, content: El) -> El {
     col()
         .key(key.to_owned())
         .w_full()
@@ -1534,11 +1522,8 @@ fn scroll(kit: &Kit, key: &str, content: El) -> El {
         .scroll(ScrollSpec {
             stick_bottom: false,
         })
-        .scroll_fade(
-            ScrollFade::feather(18.0).stops(&[(0.25, 0.16), (0.5, 0.5), (0.75, 0.84)]),
-        )
+        .scroll_fade(ScrollFade::feather(18.0))
         .child(content.pr(14.0))
-        .scroll_bar(kit)
 }
 
 fn control_columns(action: El, keyboard: El, playstation: El, xbox: El) -> El {

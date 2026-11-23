@@ -1409,6 +1409,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     rune::set_app_icon_resource(1);
     let spec = AppSpec {
+        fonts: astryx_rune::NEUTRAL_FONTS,
+        families: astryx_rune::FAMILIES,
         setup: Some(App::setup),
         min_size: Some((860.0, 525.0)),
         ..AppSpec::new(

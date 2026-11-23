@@ -14,8 +14,8 @@ fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 rfd = "0.17"
 tempfile = "3"
-rune = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752", default-features = false, features = ["accessibility", "embedded-fonts", "tooling"] }
-rune-kit = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752", default-features = false }
+rune = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5", default-features = false, features = ["accessibility", "embedded-fonts", "tooling"] }
+astryx-rune = { path = "H:/Dev/astryx-rune", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
@@ -25,9 +25,9 @@ winresource = "0.1"
 
 # Rune uses these Windows and text pipeline fixes from the same revision.
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
-winit = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
-sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
-parley_engine = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
-accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
-accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "f05046ac10fc124f9314c3ee6dc2434e2e6e2752" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
+winit = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
+sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "f54cbcfa84d995d339c243a579218f5062c940b5" }
