@@ -1194,8 +1194,9 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .min_w(0.0);
             let source_card = col()
                 .w_full()
-                .padding(14.0)
-                .gap(8.0)
+                .px(14.0)
+                .py(10.0)
+                .gap(7.0)
                 .fill(kit.c.layer_01)
                 .radius(kit.radius.md)
                 .child(
@@ -1280,7 +1281,8 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
             ));
             let update_card = row()
                 .w_full()
-                .padding(14.0)
+                .px(14.0)
+                .py(10.0)
                 .gap(14.0)
                 .justify_between()
                 .center_y()
@@ -1298,7 +1300,8 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
 
             let diag_card = row()
                 .w_full()
-                .padding(14.0)
+                .px(14.0)
+                .py(10.0)
                 .gap(14.0)
                 .justify_between()
                 .center_y()
@@ -1338,7 +1341,8 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
 
             let support_card = row()
                 .w_full()
-                .padding(14.0)
+                .px(14.0)
+                .py(10.0)
                 .gap(14.0)
                 .justify_between()
                 .center_y()
@@ -1367,7 +1371,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
             col()
                 .key("settings-system-content")
                 .w_full()
-                .gap(12.0)
+                .gap(9.0)
                 .child(source_card.key("source-card"))
                 .child(update_card.key("update-card"))
                 .child(diag_card.key("diag-card"))
