@@ -709,23 +709,6 @@ fn toggle_switch(
     }
 }
 
-fn preset_button(kit: &Kit, key: &str, label: &str, preset: Preset, active: bool) -> El {
-    piston_button(
-        kit,
-        key,
-        label,
-        None,
-        ButtonVariant::Neutral,
-        ControlSize::Regular,
-        !active,
-        active.then(|| {
-            let f: Box<dyn Fn(&mut App, &mut rune::Tx) + 'static> =
-                Box::new(move |app: &mut App, tx| app.update(Message::Preset(preset), tx));
-            f
-        }),
-    )
-}
-
 fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
     use crate::profile::Choice;
     let cfg = &app.settings;
@@ -836,6 +819,36 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 overlays,
                 Message::Anisotropy,
             );
+            let preset_choices = [
+                (Preset::Handheld, "Handheld (720p)"),
+                (Preset::Balanced, "Balanced (1080p)"),
+                (Preset::HighRefresh, "High Refresh (1440p)"),
+                (Preset::Ultra, "Ultra (4K)"),
+            ];
+            let preset_current = preset_choices
+                .iter()
+                .find(|(preset, _)| {
+                    let mut expected = cfg.clone();
+                    expected.apply_preset(*preset);
+                    expected == *cfg
+                })
+                .map(|(_, label)| *label)
+                .unwrap_or("Custom");
+            let preset_select = selection(
+                "quick-preset",
+                "Quick Presets",
+                preset_current,
+                preset_choices
+                    .iter()
+                    .map(|(preset, label)| (*preset, (*label).to_owned()))
+                    .collect(),
+                215.0,
+                Placement::BottomEnd,
+                app,
+                kit,
+                overlays,
+                Message::Preset,
+            );
             let presets = row()
                 .w_full()
                 .px(12.0)
@@ -846,38 +859,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .fill(kit.c.layer_01)
                 .radius(kit.radius.md)
                 .child(medium(kit, "Quick Presets"))
-                .child(
-                    row()
-                        .gap(6.0)
-                        .child(preset_button(
-                            kit,
-                            "preset-handheld",
-                            "Handheld (720p)",
-                            Preset::Handheld,
-                            active,
-                        ))
-                        .child(preset_button(
-                            kit,
-                            "preset-balanced",
-                            "Balanced (1080p)",
-                            Preset::Balanced,
-                            active,
-                        ))
-                        .child(preset_button(
-                            kit,
-                            "preset-high-refresh",
-                            "High Refresh (1440p)",
-                            Preset::HighRefresh,
-                            active,
-                        ))
-                        .child(preset_button(
-                            kit,
-                            "preset-ultra",
-                            "Ultra (4K)",
-                            Preset::Ultra,
-                            active,
-                        )),
-                );
+                .child(preset_select);
             let left = col()
                 .grow(1.0)
                 .min_w(0.0)
