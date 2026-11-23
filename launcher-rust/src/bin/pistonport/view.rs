@@ -477,7 +477,7 @@ fn garage(app: &App, kit: &Kit) -> El {
                 .w_full()
                 .h_full()
                 .pixels_fit(cover.pixels(), SurfaceFit::Fill)
-                .surface_anchor(Align::Start, Align::Start)
+                .surface_anchor(Align::Center, Align::End)
                 .transition(Transition::opacity())
                 .motion(Spring::new(0.65, 0.0)),
         );
