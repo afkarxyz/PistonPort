@@ -419,7 +419,7 @@ impl App {
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|&s| s >= 1)
-            .unwrap_or(3);
+            .unwrap_or(2);
         let _ = rune::task::spawn("PistonPort backdrop timer", move || {
             std::thread::sleep(std::time::Duration::from_secs(secs));
             handle.update(move |state, tx| state.update(Message::AutoCycleBackdrop(token), tx));
