@@ -651,6 +651,19 @@ fn page_frame(kit: &Kit, key: &str, title: &str, actions: El) -> El {
         )
 }
 
+fn section_heading(kit: &Kit, label: &str) -> El {
+    col()
+        .w_full()
+        .gap(6.0)
+        .pb(4.0)
+        .child(
+            text(label.to_uppercase())
+                .font(TextStyle::new(11.5, 650.0))
+                .color(kit.c.text_muted),
+        )
+        .child(el().w_full().h(1.0).fill(kit.c.border_muted))
+}
+
 fn setting_row(kit: &Kit, label: &str, control: El) -> El {
     row()
         .key(format!("row-{label}"))
@@ -851,20 +864,17 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
             );
             let presets = row()
                 .w_full()
-                .px(12.0)
-                .py(10.0)
+                .py(2.0)
                 .justify_between()
                 .center_y()
                 .gap(10.0)
-                .fill(kit.c.layer_01)
-                .radius(kit.radius.md)
                 .child(medium(kit, "Quick Presets"))
                 .child(preset_select);
             let left = col()
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Display"))
+                .child(section_heading(kit, "Display"))
                 .child(setting_row(kit, "Display Mode", mode))
                 .child(setting_row(kit, "Render Resolution", size))
                 .child(setting_row(kit, "Frame Rate Limit", rate))
@@ -884,7 +894,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Rendering Quality"))
+                .child(section_heading(kit, "Rendering Quality"))
                 .child(setting_row(kit, "Shadow Resolution", shadow))
                 .child(setting_row(kit, "Anisotropic Filtering", anisotropy))
                 .child(setting_row(
@@ -1007,7 +1017,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Upscaling & Shaders"))
+                .child(section_heading(kit, "Upscaling & Shaders"))
                 .child(setting_row(
                     kit,
                     "FSR 1 Upscaling",
@@ -1049,7 +1059,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Hardware & Compatibility"))
+                .child(section_heading(kit, "Hardware & Compatibility"))
                 .child(setting_row(kit, "GPU Adapter", gpu))
                 .child(setting_row(kit, "Monitor", monitor))
                 .child(setting_row(kit, "GPU Compatibility", compat));
@@ -1103,7 +1113,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Camera & HUD"))
+                .child(section_heading(kit, "Camera & HUD"))
                 .child(setting_row(kit, "Camera FOV", fov))
                 .child(setting_row(
                     kit,
@@ -1147,7 +1157,7 @@ fn settings(app: &App, kit: &Kit, overlays: &mut Vec<El>) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(6.0)
-                .child(medium(kit, "Controller & Audio"))
+                .child(section_heading(kit, "Controller & Audio"))
                 .child(setting_row(kit, "Controller Vibration", vibration))
                 .child(setting_row(kit, "Master Volume", volume));
             row()
@@ -1578,7 +1588,7 @@ fn saves(app: &App, kit: &Kit) -> El {
     if let Some(slot) = app.slots.iter().find(|slot| slot.id == "default") {
         list = list.child(save_row(app, kit, slot, "Start or continue your own game."));
     }
-    list = list.child(col().pt(9.0).child(medium(kit, "Built-In Save")));
+    list = list.child(col().pt(9.0).child(section_heading(kit, "Built-In Save")));
     for slot in app.slots.iter().filter(|slot| slot.is_builtin()) {
         list = list.child(save_row(
             app,
@@ -1593,7 +1603,7 @@ fn saves(app: &App, kit: &Kit) -> El {
         .filter(|slot| slot.id != "default" && !slot.is_builtin())
         .peekable();
     if imported.peek().is_some() {
-        list = list.child(col().pt(9.0).child(medium(kit, "Imported Saves")));
+        list = list.child(col().pt(9.0).child(section_heading(kit, "Imported Saves")));
         for slot in imported {
             list = list.child(save_row(app, kit, slot, ""));
         }
