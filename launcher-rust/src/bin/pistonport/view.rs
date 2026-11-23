@@ -463,7 +463,7 @@ fn garage(app: &App, kit: &Kit) -> El {
         .fill(kit.c.bg_base)
         .transition(Transition::none());
     let Some(cover) = app.assets.as_ref().and_then(|a| a.cover.as_ref()) else {
-        return page.center().child(Loader::new().size(24.0).build(kit));
+        return page;
     };
     let stage = el()
         .key("garage-backdrop-stage")
